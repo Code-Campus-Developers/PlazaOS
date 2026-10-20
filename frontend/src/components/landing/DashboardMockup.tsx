@@ -2,16 +2,16 @@ import { StatusBadge } from '../StatusBadge'
 
 const STATS = [
   { label: 'Occupancy', value: '92%', change: '+2.4%' },
-  { label: 'Revenue', value: '$48,250', change: '+12%' },
+  { label: 'Revenue', value: '₦48,250', change: '+12%' },
   { label: 'Tenants', value: '128', change: '+3' },
   { label: 'Maintenance', value: '12', change: '-4' },
 ]
 
 const PAYMENTS = [
-  { tenant: 'Acme Corp', unit: 'A-101', amount: '$2,400', status: 'success' as const },
-  { tenant: 'Globex Inc', unit: 'B-204', amount: '$1,850', status: 'success' as const },
-  { tenant: 'Initech', unit: 'C-310', amount: '$3,100', status: 'info' as const },
-  { tenant: 'Umbrella Co', unit: 'D-102', amount: '$950', status: 'danger' as const },
+  { tenant: 'Acme Corp', unit: 'A-101', amount: '₦2,400', status: 'success' as const },
+  { tenant: 'Globex Inc', unit: 'B-204', amount: '₦1,850', status: 'success' as const },
+  { tenant: 'Initech', unit: 'C-310', amount: '₦3,100', status: 'info' as const },
+  { tenant: 'Umbrella Co', unit: 'D-102', amount: '₦950', status: 'danger' as const },
 ]
 
 const SIDEBAR_ITEMS = [

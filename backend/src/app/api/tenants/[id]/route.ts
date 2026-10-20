@@ -82,7 +82,21 @@ export const PATCH = withErrorHandling(async (request: NextRequest, { params }: 
   const found = await loadTenant(id)
   if (!found) throw new ApiError('Tenant not found', 404)
 
-  if (parsed.data.accountStatus !== undefined) found.user.accountStatus = parsed.data.accountStatus
+  if (parsed.data.accountStatus !== undefined) {
+    // An account with no password can only ever be waiting for setup: the
+    // login route rejects accounts without a passwordHash, and an invitation
+    // can only be redeemed while the account is 'pending'. Marking such an
+    // account 'active' or 'temporary' would leave the tenant unable to sign
+    // in *and* their outstanding invitation unredeemable — a one-way door
+    // with no way back for the tenant.
+    if (!found.user.passwordHash) {
+      throw new ApiError(
+        'This tenant has not set up a password yet. Send a setup invitation first.',
+        409,
+      )
+    }
+    found.user.accountStatus = parsed.data.accountStatus
+  }
   if (parsed.data.mustChangePassword !== undefined) found.user.mustChangePassword = parsed.data.mustChangePassword
   await found.user.save()
 

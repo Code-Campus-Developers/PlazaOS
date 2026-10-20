@@ -22,11 +22,13 @@ const rentStatusVariant: Record<RentStatus, 'success' | 'warning' | 'danger'> = 
 }
 
 const accountStatusLabel: Record<AccountStatus, string> = {
+  pending: 'Invitation pending',
   temporary: 'Temporary password',
   active: 'Active',
 }
 
 const accountStatusVariant: Record<AccountStatus, 'warning' | 'success'> = {
+  pending: 'warning',
   temporary: 'warning',
   active: 'success',
 }

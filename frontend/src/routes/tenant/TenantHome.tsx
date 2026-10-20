@@ -9,6 +9,7 @@ import { useAnnouncements } from '../../hooks/useAnnouncements'
 import { useNotifications } from '../../hooks/useNotifications'
 import type { Payment } from '../../lib/services/paymentService'
 import type { MaintenanceRequest } from '../../lib/services/maintenanceService'
+import { formatNaira } from '../../lib/formatNaira'
 
 const paymentColumns: TableColumn<Payment>[] = [
   { key: 'date', header: 'Date' },
@@ -35,7 +36,7 @@ export function TenantHome() {
 
   const paymentSummary = useMemo(() => {
     const rows = payments.data?.data ?? []
-    const summary = { paid: 0, pending: 0, failed: 0 }
+    const summary = { paid: 0, pending: 0, failed: 0, refunded: 0 }
     for (const p of rows) {
       summary[p.status] += 1
     }
@@ -52,11 +53,15 @@ export function TenantHome() {
 
   const balance = useMemo(() => {
     const rows = payments.data?.data ?? []
-    return rows.filter((p) => p.status === 'pending' || p.status === 'failed').reduce((sum, p) => sum + p.amount, 0)
+    // A refunded payment's amount is owed again — the gateway returned the
+    // money and the rent charge went back to being due.
+    return rows
+      .filter((p) => p.status === 'pending' || p.status === 'failed' || p.status === 'refunded')
+      .reduce((sum, p) => sum + p.amount, 0)
   }, [payments.data])
 
   return (
-    <div className="mx-auto max-w-6xl px-4 sm:px-6">
+    <div className="page-container">
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <Text variant="h1">Welcome back, {profile?.name ?? 'Tenant'}</Text>
@@ -73,8 +78,10 @@ export function TenantHome() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Card className="h-full">
-          <Text variant="h3">Rent summary</Text>
+        <Card className="stat-card stat-primary h-full">
+          <Text variant="caption" className="text-slate-500">
+            Rent Summary
+          </Text>
           <div className="mt-3 flex flex-col gap-2">
             {payments.isError ? (
               <div className="flex items-center justify-between">
@@ -84,28 +91,38 @@ export function TenantHome() {
             ) : null}
             <div className="flex items-center justify-between">
               <Text variant="body">Monthly rent</Text>
-              <Text variant="body">${profile?.monthlyRent ?? '—'}</Text>
+              <Text variant="body" className="font-semibold text-slate-900">
+                {profile?.monthlyRent != null ? formatNaira(profile.monthlyRent) : '—'}
+              </Text>
             </div>
             <div className="flex items-center justify-between">
               <Text variant="body">Next due</Text>
-              <Text variant="body">{nextDue ?? '—'}</Text>
+              <Text variant="body" className="font-semibold text-slate-900">
+                {nextDue ?? '—'}
+              </Text>
             </div>
             <div className="flex items-center justify-between">
               <Text variant="body">Balance</Text>
-              <Text variant="body">${balance}</Text>
+              <Text variant="body" className="font-semibold text-danger">
+                {formatNaira(balance)}
+              </Text>
             </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <div className="mt-2 grid grid-cols-4 gap-2 border-t border-slate-100 pt-3">
               <div>
                 <Text variant="caption">Paid</Text>
-                <Text variant="h3">{paymentSummary.paid}</Text>
+                <Text variant="h3" className="text-success">{paymentSummary.paid}</Text>
               </div>
               <div>
                 <Text variant="caption">Pending</Text>
-                <Text variant="h3">{paymentSummary.pending}</Text>
+                <Text variant="h3" className="text-warning">{paymentSummary.pending}</Text>
               </div>
               <div>
                 <Text variant="caption">Failed</Text>
-                <Text variant="h3">{paymentSummary.failed}</Text>
+                <Text variant="h3" className="text-danger">{paymentSummary.failed}</Text>
+              </div>
+              <div>
+                <Text variant="caption">Refunded</Text>
+                <Text variant="h3" className="text-slate-600">{paymentSummary.refunded}</Text>
               </div>
             </div>
           </div>
@@ -159,16 +176,16 @@ export function TenantHome() {
               </div>
             ) : (
               latestAnnouncements.map((a) => (
-                <div key={a.id} className="flex flex-col gap-3 rounded border border-slate-200 p-3 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <Text variant="h3" className="truncate">{a.title}</Text>
-                  <Text variant="bodySmall" className="mt-1 text-slate-500">
-                    {a.body}
-                  </Text>
+                <div key={a.id} className="flex flex-col gap-3 rounded-lg border border-slate-100 p-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <Text variant="h3" className="truncate">{a.title}</Text>
+                    <Text variant="bodySmall" className="mt-1 text-slate-500">
+                      {a.body}
+                    </Text>
+                  </div>
+                  {a.important ? <StatusBadge variant="warning" label="Important" dot /> : null}
                 </div>
-                {a.important ? <StatusBadge variant="warning" label="Important" /> : null}
-              </div>
-            ))
+              ))
             )}
           </div>
         </Card>
@@ -177,7 +194,7 @@ export function TenantHome() {
           <Text variant="h3">Notifications</Text>
           <div className="mt-3 space-y-3">
             {notificationsList.slice(0, 5).map((n) => (
-              <div key={n.id} className={`flex flex-col gap-2 rounded border border-slate-200 p-3 sm:flex-row sm:items-center sm:justify-between ${n.read ? 'opacity-60' : ''}`}>
+              <div key={n.id} className={`flex flex-col gap-2 rounded-lg border border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between ${n.read ? 'opacity-60' : ''}`}>
                 <div className="min-w-0">
                   <Text variant="body" className="truncate">{n.title}</Text>
                   <Text variant="bodySmall" className="text-slate-500">{n.date}</Text>

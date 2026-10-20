@@ -8,8 +8,9 @@ import { PageHeader } from '../components/PageHeader'
 import { getMaintenanceRequestsByTenant } from '../maintenance/data'
 import { getPaymentsByTenant } from '../payments/data'
 import type { AccountStatus, MaintenanceRequest, Payment, RentStatus, Tenant, TenantStatus } from '../data/types'
-import { getTenant, resetTenantPassword, updateTenant } from './data'
-import { TempPasswordReveal } from './TempPasswordReveal'
+import { getTenant, resetTenantPassword, updateTenant, type InvitationResult } from './data'
+import { InvitationNotice } from './InvitationNotice'
+import { formatNaira } from '../../../lib/formatNaira'
 
 const rentStatusLabel: Record<RentStatus, string> = {
   paid: 'Paid',
@@ -34,11 +35,13 @@ const leaseStatusVariant: Record<TenantStatus, 'success' | 'danger'> = {
 }
 
 const accountStatusLabel: Record<AccountStatus, string> = {
+  pending: 'Invitation pending',
   temporary: 'Temporary password',
   active: 'Active',
 }
 
 const accountStatusVariant: Record<AccountStatus, 'warning' | 'success'> = {
+  pending: 'warning',
   temporary: 'warning',
   active: 'success',
 }
@@ -54,7 +57,7 @@ const paymentColumns: TableColumn<Payment>[] = [
       </Link>
     ),
   },
-  { key: 'amount', header: 'Amount', render: (payment) => `$${payment.amount.toLocaleString()}` },
+  { key: 'amount', header: 'Amount', render: (payment) => formatNaira(payment.amount) },
   {
     key: 'status',
     header: 'Status',
@@ -103,8 +106,9 @@ export function TenantDetail() {
   const [leaseEnd, setLeaseEnd] = useState('')
   const [monthlyRent, setMonthlyRent] = useState('')
   const [isSaving, setIsSaving] = useState(false)
-  const [isResettingPassword, setIsResettingPassword] = useState(false)
-  const [resetTempPassword, setResetTempPassword] = useState<string | null>(null)
+  const [isSendingInvitation, setIsSendingInvitation] = useState(false)
+  const [invitation, setInvitation] = useState<InvitationResult | null>(null)
+  const [invitationError, setInvitationError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!tenantId) return
@@ -164,14 +168,17 @@ export function TenantDetail() {
     }
   }
 
-  async function handleResetPassword() {
-    setIsResettingPassword(true)
+  async function handleSendInvitation() {
+    setIsSendingInvitation(true)
+    setInvitationError(null)
     try {
       const result = await resetTenantPassword(currentTenant.id)
-      setTenant({ ...currentTenant, accountStatus: 'temporary', mustChangePassword: true })
-      setResetTempPassword(result.tempPassword)
+      setTenant({ ...currentTenant, accountStatus: 'pending', mustChangePassword: true })
+      setInvitation(result.invitation)
+    } catch (error) {
+      setInvitationError(error instanceof Error ? error.message : 'Unable to send the invitation. Please try again.')
     } finally {
-      setIsResettingPassword(false)
+      setIsSendingInvitation(false)
     }
   }
 
@@ -226,13 +233,20 @@ export function TenantDetail() {
               label={accountStatusLabel[currentTenant.accountStatus]}
             />
           </DetailField>
-          <Button variant="secondary" onClick={handleResetPassword} disabled={isResettingPassword}>
-            {isResettingPassword ? 'Resetting…' : 'Reset password'}
+          <Button variant="secondary" onClick={handleSendInvitation} disabled={isSendingInvitation}>
+            {isSendingInvitation ? 'Sending…' : 'Send setup invitation'}
           </Button>
         </div>
-        {resetTempPassword ? (
+        {invitationError ? (
           <div className="mt-4">
-            <TempPasswordReveal email={currentTenant.email} tempPassword={resetTempPassword} />
+            <Text variant="bodySmall" className="text-danger">
+              {invitationError}
+            </Text>
+          </div>
+        ) : null}
+        {invitation ? (
+          <div className="mt-4">
+            <InvitationNotice email={currentTenant.email} invitation={invitation} resent />
           </div>
         ) : null}
       </Card>

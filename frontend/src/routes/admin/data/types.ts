@@ -17,9 +17,12 @@ export interface Unit {
 
 export type TenantStatus = 'active' | 'inactive'
 export type RentStatus = 'paid' | 'due' | 'overdue'
-// 'temporary' = still on the system-generated password from account
-// creation (or a reset); 'active' = they've set their own password.
-export type AccountStatus = 'temporary' | 'active'
+// 'pending'   = a setup invitation was sent; the tenant has not set a
+//               password yet (and therefore cannot log in).
+// 'temporary' = legacy account still on the system-generated password from
+//               account creation (or a reset).
+// 'active'    = they've set their own password.
+export type AccountStatus = 'pending' | 'temporary' | 'active'
 
 export interface Tenant {
   id: string

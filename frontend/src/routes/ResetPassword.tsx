@@ -1,15 +1,11 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { AuthShell } from './AuthShell'
-import { updateTenant } from './admin/tenants/data'
-import { consumeResetToken, getTenantIdForToken } from './passwordResetTokens'
+import { authService } from '../lib/services/authService'
 
 export function ResetPassword() {
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') ?? ''
-  // Read once on mount: consuming the token below must not change which
-  // branch this renders on the same page load.
-  const tenantId = useMemo(() => getTenantIdForToken(token), [token])
 
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -17,7 +13,10 @@ export function ResetPassword() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [done, setDone] = useState(false)
 
-  function handleSubmit(e: FormEvent) {
+  // Empty token means invalid/expired/missing
+  const hasValidToken = !!token
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError(null)
 
@@ -31,18 +30,17 @@ export function ResetPassword() {
     }
 
     setIsSubmitting(true)
-    // TODO: becomes POST /auth/reset-password { token, newPassword } once the
-    // backend exists — it validates + expires the token and hashes the
-    // password server-side, instead of the mock tenant update below.
-    if (tenantId) {
-      updateTenant(tenantId, { mustChangePassword: false, accountStatus: 'active' })
-    }
-    consumeResetToken(token)
 
-    window.setTimeout(() => {
+    try {
+      await authService.resetPassword(token, newPassword)
+      window.setTimeout(() => {
+        setIsSubmitting(false)
+        setDone(true)
+      }, 300)
+    } catch (err) {
       setIsSubmitting(false)
-      setDone(true)
-    }, 300)
+      setError(err instanceof Error ? err.message : 'Failed to reset password. Please try again.')
+    }
   }
 
   if (done) {
@@ -62,7 +60,7 @@ export function ResetPassword() {
     )
   }
 
-  if (!tenantId) {
+  if (!hasValidToken) {
     return (
       <AuthShell plateLabel="PLAZA OS · LINK EXPIRED">
         <div className="py-2 text-center">

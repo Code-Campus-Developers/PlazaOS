@@ -6,6 +6,7 @@ import { hashPassword } from '@/lib/password'
 import { ApiError } from '@/lib/api-error'
 import { withErrorHandling, requireAuth, OPTIONS as corsOptions } from '@/lib/route-handler'
 import { rateLimit } from '@/lib/rate-limit'
+import { invalidateOutstandingInvitations } from '@/lib/account-invitation'
 
 export { corsOptions as OPTIONS }
 
@@ -30,7 +31,12 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
 
   user.passwordHash = await hashPassword(parsed.data.newPassword)
   user.mustChangePassword = false
+  // The account has a password of the user's own choosing now, so it is no
+  // longer "awaiting setup" — and any outstanding invitation link that could
+  // otherwise overwrite this password is invalidated.
+  user.accountStatus = 'active'
   await user.save()
+  await invalidateOutstandingInvitations(user._id)
 
   return NextResponse.json({ success: true })
 })

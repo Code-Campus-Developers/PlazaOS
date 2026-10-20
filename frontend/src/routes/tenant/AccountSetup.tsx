@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Card, Input, Text } from '../../components'
 import { useAuth } from '../../context/useAuth'
-import type { AuthUser } from '../../context/AuthContext'
-import { useChangePassword } from '../../hooks/useChangePassword'
 import { ApiError } from '../../lib/api'
+import { authService, type InvitationStatus } from '../../lib/services/authService'
 
 type FormValues = {
-  currentPassword: string
   newPassword: string
   confirmPassword: string
 }
@@ -20,46 +18,128 @@ function getErrorMessage(error: unknown): string {
   return 'Unable to secure your account. Please try again.'
 }
 
+const INVITATION_REASON_MESSAGES: Record<InvitationStatus['reason'], string> = {
+  invalid: 'This invitation link is not valid. Please ask your administrator to send a new one.',
+  expired: 'This invitation link has expired. Please ask your administrator to send a new one.',
+  used: 'This invitation link has already been used. Please sign in with your password.',
+  ready: '',
+}
+
+/**
+ * Account setup.
+ *
+ * Two modes, both ending in the same place:
+ *
+ * 1. **Invitation (public).** The tenant arrives from the emailed setup link
+ *    (`?token=…`) and chooses their own password. This route is deliberately
+ *    reachable without being signed in.
+ * 2. **Signed-in (legacy).** A tenant already holding a system-issued
+ *    password is still on `mustChangePassword`, and sets a new one here.
+ */
 export function AccountSetup() {
   const { user, completePasswordSetup } = useAuth()
   const navigate = useNavigate()
-  const changePassword = useChangePassword()
-  const [isComplete, setIsComplete] = useState(false)
-  const [updatedUser, setUpdatedUser] = useState<AuthUser | undefined>()
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false)
+  const [searchParams] = useSearchParams()
+  const token = searchParams.get('token') ?? ''
+
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<unknown>(null)
   const [showNewPassword, setShowNewPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+
+  // Invitation state: 'checking' until the server has confirmed the link.
+  const [invitation, setInvitation] = useState<InvitationStatus | null>(null)
+  const [isCheckingInvitation, setIsCheckingInvitation] = useState(Boolean(token))
+
   const { register, handleSubmit, watch, formState } = useForm<FormValues>({
-    defaultValues: { currentPassword: '', newPassword: '', confirmPassword: '' },
+    defaultValues: { newPassword: '', confirmPassword: '' },
   })
   const newPassword = watch('newPassword')
 
+  // Validate the invitation against the server so the page never tells a
+  // tenant their link is fine when it is not. The authoritative check still
+  // happens again when the password is submitted.
   useEffect(() => {
-    if (!user?.mustChangePassword && !isComplete) {
+    if (!token) return
+    let cancelled = false
+    setIsCheckingInvitation(true)
+    authService
+      .getInvitationStatus(token)
+      .then((status) => {
+        if (!cancelled) setInvitation(status)
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setInvitation({ valid: false, reason: 'invalid' })
+          setSubmitError(error)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsCheckingInvitation(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
+  // Signed-in mode: a tenant who no longer needs to change their password
+  // has nothing to do here.
+  useEffect(() => {
+    if (token) return
+    if (!user?.mustChangePassword) {
       navigate('/tenant', { replace: true })
     }
-  }, [isComplete, navigate, user?.mustChangePassword])
-
-  useEffect(() => {
-    if (!isComplete) return
-    const timeout = window.setTimeout(() => {
-      completePasswordSetup(updatedUser)
-      navigate('/tenant', { replace: true })
-    }, 700)
-    return () => window.clearTimeout(timeout)
-  }, [completePasswordSetup, isComplete, navigate, updatedUser])
+  }, [navigate, token, user?.mustChangePassword])
 
   async function onSubmit(values: FormValues) {
+    setSubmitError(null)
+    setIsSubmitting(true)
     try {
-      const response = await changePassword.mutateAsync({
-        currentPassword: values.currentPassword,
-        newPassword: values.newPassword,
-      })
-      setUpdatedUser(response?.user)
-      setIsComplete(true)
-    } catch {
-      // The mutation state supplies a user-safe error message below.
+      if (token) {
+        // Invitation mode — the tenant sets their own password for the first
+        // time, then signs in normally.
+        await authService.acceptInvitation(token, values.newPassword)
+        navigate('/login', { replace: true, state: { accountSetup: 'success' } })
+        return
+      }
+
+      await authService.setPassword(values.newPassword)
+      completePasswordSetup()
+      navigate('/tenant', { replace: true })
+    } catch (error) {
+      setSubmitError(error)
+    } finally {
+      setIsSubmitting(false)
     }
+  }
+
+  if (isCheckingInvitation) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-200/40 px-4 py-8">
+        <Card className="w-full max-w-md">
+          <Text variant="h1">Checking your invitation</Text>
+          <Text variant="body" className="mt-2 text-slate-500">
+            One moment…
+          </Text>
+        </Card>
+      </div>
+    )
+  }
+
+  if (token && invitation && !invitation.valid) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-200/40 px-4 py-8">
+        <Card className="w-full max-w-md">
+          <Text variant="h1">This link can’t be used</Text>
+          <Text variant="body" className="mt-2 text-slate-500">
+            {INVITATION_REASON_MESSAGES[invitation.reason]}
+          </Text>
+          <Button type="button" variant="secondary" className="mt-6 w-full" onClick={() => navigate('/login', { replace: true })}>
+            Go to sign in
+          </Button>
+        </Card>
+      </div>
+    )
   }
 
   return (
@@ -67,66 +147,31 @@ export function AccountSetup() {
       <Card className="w-full max-w-md">
         <Text variant="h1">Secure your account</Text>
         <Text variant="body" className="mt-2 text-slate-500">
-          Your account was created by an administrator. For your privacy and security, please create your own password before continuing.
+          {token
+            ? 'Welcome to PlazaOS. Choose your own password to finish setting up your account.'
+            : 'Your account was created by an administrator. For your privacy and security, please create your own password before continuing.'}
         </Text>
+        {token && invitation?.email ? (
+          <Text variant="bodySmall" className="mt-2 text-slate-500">
+            Setting up {invitation.email}
+          </Text>
+        ) : null}
 
         <form onSubmit={handleSubmit(onSubmit)} className="mt-6 flex flex-col gap-4">
-          <Input
-            label="Current or temporary password"
-            type={showCurrentPassword ? 'text' : 'password'}
-            autoComplete="current-password"
-            disabled={changePassword.isPending}
-            error={formState.errors.currentPassword?.message}
-            action={
-              <button
-                type="button"
-                onClick={() => setShowCurrentPassword((prev) => !prev)}
-                aria-label={showCurrentPassword ? 'Hide password' : 'Show password'}
-                className="flex h-full w-10 items-center justify-center text-slate-500 hover:text-slate-700"
-              >
-                {showCurrentPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-                    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-                    <line x1="2" x2="22" y1="2" y2="22" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
-              </button>
-            }
-            {...register('currentPassword', { required: 'Your current or temporary password is required.' })}
-          />
           <Input
             label="New password"
             type={showNewPassword ? 'text' : 'password'}
             autoComplete="new-password"
-            disabled={changePassword.isPending}
+            disabled={isSubmitting}
             error={formState.errors.newPassword?.message}
             action={
               <button
                 type="button"
-                onClick={() => setShowNewPassword((prev) => !prev)}
+                onClick={() => setShowNewPassword((value) => !value)}
                 aria-label={showNewPassword ? 'Hide password' : 'Show password'}
-                className="flex h-full w-10 items-center justify-center text-slate-500 hover:text-slate-700"
+                className="text-xs font-medium text-slate-500 hover:text-slate-700"
               >
-                {showNewPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-                    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-                    <line x1="2" x2="22" y1="2" y2="22" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
+                {showNewPassword ? 'Hide' : 'Show'}
               </button>
             }
             {...register('newPassword', {
@@ -138,28 +183,16 @@ export function AccountSetup() {
             label="Confirm new password"
             type={showConfirmPassword ? 'text' : 'password'}
             autoComplete="new-password"
-            disabled={changePassword.isPending}
+            disabled={isSubmitting}
             error={formState.errors.confirmPassword?.message}
             action={
               <button
                 type="button"
-                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                onClick={() => setShowConfirmPassword((value) => !value)}
                 aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                className="flex h-full w-10 items-center justify-center text-slate-500 hover:text-slate-700"
+                className="text-xs font-medium text-slate-500 hover:text-slate-700"
               >
-                {showConfirmPassword ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-                    <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-                    <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-                    <line x1="2" x2="22" y1="2" y2="22" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z" />
-                    <circle cx="12" cy="12" r="3" />
-                  </svg>
-                )}
+                {showConfirmPassword ? 'Hide' : 'Show'}
               </button>
             }
             {...register('confirmPassword', {
@@ -170,10 +203,9 @@ export function AccountSetup() {
           <Text variant="bodySmall" className="text-slate-500">
             Password requirements: use at least {MIN_PASSWORD_LENGTH} characters and confirm the same password.
           </Text>
-          {changePassword.isError ? <Text variant="bodySmall" className="text-danger">{getErrorMessage(changePassword.error)}</Text> : null}
-          {changePassword.isSuccess ? <Text variant="bodySmall" className="text-success">Account secured. Redirecting…</Text> : null}
-          <Button type="submit" disabled={changePassword.isPending || isComplete} className="w-full">
-            {changePassword.isPending ? 'Securing account…' : 'Secure my account'}
+          {submitError ? <Text variant="bodySmall" className="text-danger">{getErrorMessage(submitError)}</Text> : null}
+          <Button type="submit" disabled={isSubmitting} className="w-full">
+            {isSubmitting ? 'Securing account…' : 'Secure my account'}
           </Button>
         </form>
       </Card>

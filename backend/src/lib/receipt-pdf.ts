@@ -1,4 +1,5 @@
 import PDFDocument from 'pdfkit'
+import { formatAmount } from './currency'
 
 interface ReceiptData {
   receiptNumber: string
@@ -7,6 +8,7 @@ interface ReceiptData {
   amount: number
   date: string
   method: string
+  currency?: string
 }
 
 export function generateReceiptPdf(data: ReceiptData): Promise<Buffer> {
@@ -26,7 +28,7 @@ export function generateReceiptPdf(data: ReceiptData): Promise<Buffer> {
     doc.text(`Tenant: ${data.tenantName}`)
     doc.text(`Unit: ${data.unitNumber}`)
     doc.moveDown()
-    doc.text(`Amount: $${data.amount.toFixed(2)}`)
+    doc.text(`Amount: ${formatAmount(data.amount, data.currency)}`)
     doc.text(`Method: ${data.method}`)
     doc.moveDown(2)
     doc.fontSize(10).fillColor('#666666').text('This receipt was generated automatically by Plaza OS.', { align: 'center' })

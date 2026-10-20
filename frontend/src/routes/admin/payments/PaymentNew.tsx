@@ -7,6 +7,7 @@ import { Select } from '../components/Select'
 import { Textarea } from '../components/Textarea'
 import { getTenants } from '../tenants/data'
 import type { PaymentMethod, Tenant } from '../data/types'
+import { formatNaira } from '../../../lib/formatNaira'
 import { addPayment, getRentChargesForTenant, type RentCharge } from './data'
 
 const OFFLINE_METHODS: { value: PaymentMethod; label: string }[] = [
@@ -28,6 +29,8 @@ export function PaymentNew() {
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [note, setNote] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [chargesError, setChargesError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -45,14 +48,18 @@ export function PaymentNew() {
     if (!tenantId) return
     let cancelled = false
     setRentChargeId('')
+    setChargesError(null)
     getRentChargesForTenant(tenantId)
       .then((charges) => {
         if (cancelled) return
         setRentCharges(charges)
         if (charges[0]) setRentChargeId(charges[0].id)
       })
-      .catch(() => {
-        if (!cancelled) setRentCharges([])
+      .catch((error) => {
+        if (cancelled) return
+        // Surface the failure instead of pretending the tenant has no charges.
+        setRentCharges([])
+        setChargesError(error instanceof Error ? error.message : 'Unable to load rent charges.')
       })
     return () => {
       cancelled = true
@@ -65,6 +72,7 @@ export function PaymentNew() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!selectedTenant || !selectedCharge) return
+    setSubmitError(null)
     setIsSubmitting(true)
     try {
       await addPayment({
@@ -75,10 +83,11 @@ export function PaymentNew() {
         amount: selectedCharge.amount,
         date,
         method,
-        status: 'paid',
-        notes: note || undefined,
+        note: note || undefined,
       })
       navigate('/admin/payments')
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to record the payment. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -97,6 +106,7 @@ export function PaymentNew() {
             options={tenants.map((tenant) => ({ value: tenant.id, label: `${tenant.name} (${tenant.unitNumber})` }))}
             required
           />
+          {chargesError ? <Text variant="bodySmall" className="text-danger">{chargesError}</Text> : null}
           {rentCharges.length > 0 ? (
             <Select
               label="Rent charge"
@@ -104,7 +114,7 @@ export function PaymentNew() {
               onChange={(event) => setRentChargeId(event.target.value)}
               options={rentCharges.map((charge) => ({
                 value: charge.id,
-                label: `$${charge.amount.toLocaleString()} due ${charge.dueDate} (${charge.status})`,
+                label: `${formatNaira(charge.amount)} due ${charge.dueDate} (${charge.status})`,
               }))}
               required
             />
@@ -122,6 +132,7 @@ export function PaymentNew() {
           />
           <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
           <Textarea label="Note" placeholder="Optional context, e.g. paid in person at the office" value={note} onChange={(event) => setNote(event.target.value)} />
+          {submitError ? <Text variant="bodySmall" className="text-danger">{submitError}</Text> : null}
           <Button type="submit" disabled={isSubmitting || !selectedCharge} className="w-full">
             {isSubmitting ? 'Saving…' : 'Record payment'}
           </Button>

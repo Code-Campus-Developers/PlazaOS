@@ -9,8 +9,8 @@ import { initializeTransaction } from '@/lib/paystack'
 
 vi.mock('@/lib/db', () => ({ dbConnect: vi.fn() }))
 vi.mock('@/lib/receipt-token', () => ({ buildReceiptUrl: vi.fn(() => 'http://localhost/receipt') }))
-vi.mock('@/lib/paystack', () => ({ initializeTransaction: vi.fn() }))
-vi.mock('@/models/Payment', () => ({ Payment: { create: vi.fn() } }))
+vi.mock('@/lib/paystack', () => ({ initializeTransaction: vi.fn(), paystackCurrency: vi.fn(() => 'NGN') }))
+vi.mock('@/models/Payment', () => ({ Payment: { create: vi.fn(), findOne: vi.fn(), findByIdAndDelete: vi.fn() } }))
 vi.mock('@/models/RentCharge', () => ({ RentCharge: { findById: vi.fn() } }))
 vi.mock('@/models/User', () => ({ User: { findById: vi.fn() } }))
 
@@ -30,6 +30,7 @@ describe('POST /tenant/payments', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(User.findById).mockResolvedValue({ _id: TENANT_ID, name: 'Jane', email: 'jane@example.com', unitId: 'unit-1', unitNumber: 'A-101' } as never)
+    vi.mocked(Payment.findOne).mockResolvedValue(null as never)
   })
 
   it("rejects a rentChargeId that does not belong to the authenticated tenant", async () => {
@@ -69,5 +70,26 @@ describe('POST /tenant/payments', () => {
 
     expect(response.status).toBe(409)
     expect(Payment.create).not.toHaveBeenCalled()
+  })
+
+  it('refuses to start a second payment while one is already in flight for the same charge', async () => {
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', tenantId: TENANT_ID, amount: 1200, status: 'due' } as never)
+    vi.mocked(Payment.findOne).mockResolvedValue({ _id: 'payment-0', status: 'pending' } as never)
+
+    const response = await POST(tenantRequest({ rentChargeId: 'rc-1' }), undefined as never)
+
+    expect(response.status).toBe(409)
+    expect(Payment.create).not.toHaveBeenCalled()
+    expect(initializeTransaction).not.toHaveBeenCalled()
+  })
+
+  it('records the currency the payment was taken in', async () => {
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', tenantId: TENANT_ID, amount: 1200, status: 'due' } as never)
+    vi.mocked(Payment.create).mockResolvedValue({ _id: 'payment-1', save: vi.fn().mockResolvedValue(undefined) } as never)
+    vi.mocked(initializeTransaction).mockResolvedValue({ reference: 'plazaos_payment-1', authorization_url: 'https://paystack.test/pay' } as never)
+
+    await POST(tenantRequest({ rentChargeId: 'rc-1' }), undefined as never)
+
+    expect(Payment.create).toHaveBeenCalledWith(expect.objectContaining({ currency: 'NGN' }))
   })
 })

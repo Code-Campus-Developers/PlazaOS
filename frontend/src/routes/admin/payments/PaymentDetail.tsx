@@ -5,18 +5,21 @@ import { BackLink } from '../components/BackLink'
 import { DetailField } from '../components/DetailField'
 import { PageHeader } from '../components/PageHeader'
 import type { Payment, PaymentMethod, PaymentStatus } from '../data/types'
+import { formatNaira } from '../../../lib/formatNaira'
 import { getPayment } from './data'
 
 const statusLabel: Record<PaymentStatus, string> = {
   paid: 'Paid',
   pending: 'Pending',
   failed: 'Failed',
+  refunded: 'Refunded',
 }
 
-const statusVariant: Record<PaymentStatus, 'success' | 'warning' | 'danger'> = {
+const statusVariant: Record<PaymentStatus, 'success' | 'warning' | 'danger' | 'neutral'> = {
   paid: 'success',
   pending: 'warning',
   failed: 'danger',
+  refunded: 'neutral',
 }
 
 const methodLabel: Record<PaymentMethod, string> = {
@@ -80,7 +83,7 @@ export function PaymentDetail() {
           </Link>
         </DetailField>
         <DetailField label="Unit">{payment.unitNumber}</DetailField>
-        <DetailField label="Amount">${payment.amount.toLocaleString()}</DetailField>
+        <DetailField label="Amount">{formatNaira(payment.amount)}</DetailField>
         <DetailField label="Method">{methodLabel[payment.method]}</DetailField>
         <DetailField label="Date">{payment.date}</DetailField>
         <DetailField label="Recorded by">{payment.recordedBy ?? 'Tenant (gateway)'}</DetailField>

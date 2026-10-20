@@ -104,38 +104,63 @@ export async function getPayment(paymentId: string): Promise<Payment | undefined
 /** A tenant's outstanding (non-paid) rent charge — used to build the rent-charge picker in PaymentNew. */
 export interface RentCharge {
   id: string
-  tenantId: string
+  period?: string
+  tenantId?: string
   amount: number
   dueDate: string
   status: 'due' | 'overdue'
 }
 
-/** `GET /rent-charges?tenantId=` — admin-only, lists a tenant's outstanding rent charges. */
+/**
+ * `GET /rent-charges?tenantId=` — admin-only, lists a tenant's outstanding
+ * rent charges. The backend wraps the list in a `{ data }` envelope, so it
+ * is unwrapped here.
+ */
 export async function getRentChargesForTenant(tenantId: string): Promise<RentCharge[]> {
   const query = new URLSearchParams({ tenantId })
-  return await api.get<RentCharge[]>(`/rent-charges?${query.toString()}`)
+  const result = await api.get<{ data: RentCharge[] }>(`/rent-charges?${query.toString()}`)
+  return result.data ?? []
 }
 
 export interface AddPaymentInput {
+  rentChargeId: string
+  date: string
+  method: PaymentMethod
+  note?: string
+  /** Local-only fields used to build the returned Payment object. */
   tenantId: string
   tenantName: string
   unitNumber: string
-  rentChargeId: string
   amount: number
-  date: string
-  method: PaymentMethod
-  status: PaymentStatus
-  notes?: string
 }
 
-/** `POST /payments` — records an offline payment and settles the linked rent charge. */
+/**
+ * `POST /payments` — records an offline payment and settles the linked rent
+ * charge.
+ *
+ * Only `rentChargeId`, `method`, `date` and `note` are sent: the backend
+ * derives the tenant, unit and amount from the rent charge itself, and its
+ * schema rejects any extra field.
+ */
 export async function addPayment(input: AddPaymentInput): Promise<Payment> {
+  const { tenantId, tenantName, unitNumber, amount, ...body } = input
   try {
-    const result = await api.post<{ success: boolean; id: string }>('/payments', input)
-    return { id: result.id, receiptAvailable: input.status === 'paid', ...input }
+    const result = await api.post<{ success: boolean; id: string }>('/payments', body)
+    return {
+      id: result.id,
+      tenantId,
+      tenantName,
+      unitNumber,
+      amount,
+      date: body.date,
+      method: body.method,
+      status: 'paid',
+      note: body.note,
+      receiptAvailable: true,
+    }
   } catch (err) {
     if (!import.meta.env.DEV) throw err
-    const newPayment: Payment = { id: `payment-${Date.now()}`, receiptAvailable: input.status === 'paid', ...input }
+    const newPayment: Payment = { id: `payment-${Date.now()}`, receiptAvailable: true, ...input, status: 'paid' }
     mockPayments.push(newPayment)
     return newPayment
   }

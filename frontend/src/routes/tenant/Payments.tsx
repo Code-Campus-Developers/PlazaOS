@@ -5,11 +5,13 @@ import type { TableColumn } from '../../components'
 import type { StatusVariant } from '../../components/StatusBadge'
 import { usePayments } from '../../hooks/usePayments'
 import { DEFAULT_PAGE_SIZE, paymentService, type Payment, type PaymentStatus } from '../../lib/services/paymentService'
+import { formatNaira } from '../../lib/formatNaira'
 
 const statusVariantMap: Record<PaymentStatus, StatusVariant> = {
   paid: 'success',
   pending: 'info',
   failed: 'danger',
+  refunded: 'neutral',
 }
 
 export function Payments() {
@@ -101,6 +103,7 @@ export function Payments() {
               { value: 'paid', label: 'Paid' },
               { value: 'pending', label: 'Pending' },
               { value: 'failed', label: 'Failed' },
+              { value: 'refunded', label: 'Refunded' },
             ]}
           />
         </div>
@@ -127,7 +130,7 @@ export function Payments() {
           {selected ? (
             <div className="flex flex-col gap-3">
               <Text variant="body">Date: {selected.date}</Text>
-              <Text variant="body">Amount: ${selected.amount}</Text>
+              <Text variant="body">Amount: {formatNaira(selected.amount)}</Text>
               <Text variant="body">Status: {selected.status}</Text>
               {selected.receiptUrl ? (
                 <a href={selected.receiptUrl} target="_blank" rel="noreferrer" className="text-primary">

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import mongoose from 'mongoose'
 import { z } from 'zod'
 import { dbConnect } from '@/lib/db'
 import { Payment } from '@/models/Payment'
@@ -7,6 +8,7 @@ import { User } from '@/models/User'
 import { ApiError } from '@/lib/api-error'
 import { notifyPaymentOutcome } from '@/lib/notify-payment'
 import { escapeRegex, parsePageParams } from '@/lib/list-query'
+import { CURRENCY } from '@/lib/currency'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
 
 export { corsOptions as OPTIONS }
@@ -101,23 +103,55 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   const tenant = await User.findOne({ _id: rentCharge.tenantId, role: 'tenant' })
   if (!tenant) throw new ApiError('Tenant not found', 404)
 
-  const payment = await Payment.create({
-    tenantId: tenant._id,
-    tenantName: tenant.name,
-    unitId: rentCharge.unitId,
-    unitNumber: tenant.unitNumber ?? 'unassigned',
+  // One *live* payment per rent charge — a second record for the same period
+  // would double-count the amount against the tenant's balance. A refunded
+  // or failed payment does not count: the money came back (or never
+  // arrived), so the period can legitimately be paid again.
+  const existing = await Payment.findOne({
     rentChargeId: rentCharge._id,
-    amount: rentCharge.amount,
-    method: parsed.data.method,
-    status: 'paid',
-    date: parsed.data.date,
-    note: parsed.data.note,
-    recordedBy: auth.sub,
+    status: { $in: ['pending', 'paid'] },
   })
+  if (existing) throw new ApiError('A payment for this rent charge already exists', 409)
 
-  rentCharge.status = 'paid'
-  await rentCharge.save()
+  // The payment record and the rent charge's status are written in one
+  // transaction, so a failure between them can never leave a `paid` payment
+  // against a charge that is still outstanding (a tenant billed for rent they
+  // already paid, with no way to re-settle it).
+  const session = await mongoose.startSession()
+  let payment: any
+  try {
+    await session.withTransaction(async () => {
+      const [created] = await Payment.create(
+        [
+          {
+            tenantId: tenant._id,
+            tenantName: tenant.name,
+            unitId: rentCharge.unitId,
+            unitNumber: tenant.unitNumber ?? 'unassigned',
+            rentChargeId: rentCharge._id,
+            amount: rentCharge.amount,
+            currency: CURRENCY,
+            method: parsed.data.method,
+            status: 'paid',
+            date: parsed.data.date,
+            note: parsed.data.note,
+            recordedBy: auth.sub,
+          },
+        ],
+        { session },
+      )
+      payment = created
 
+      rentCharge.status = 'paid'
+      await rentCharge.save({ session })
+    })
+  } finally {
+    await session.endSession()
+  }
+
+  // After the transaction commits — the notification does network I/O, which
+  // must never happen inside a transaction, and a notification failure must
+  // not undo a payment that was genuinely recorded.
   await notifyPaymentOutcome(payment, 'paid')
 
   return NextResponse.json({ success: true, id: payment._id.toString() })

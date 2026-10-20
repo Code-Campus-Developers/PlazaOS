@@ -62,6 +62,24 @@ describe('POST /auth/login', () => {
     expect(json.message).toBe('Invalid email or password')
   })
 
+  it('rejects a deactivated account even with the correct password', async () => {
+    vi.mocked(User.findOne).mockResolvedValue({
+      _id: 'user-1',
+      name: 'Jane Cooper',
+      email: 'jane@example.com',
+      role: 'tenant',
+      status: 'inactive',
+      mustChangePassword: false,
+      passwordHash: 'hashed',
+    } as never)
+    vi.mocked(verifyPassword).mockResolvedValue(true as never)
+
+    const response = await POST(loginRequest({ email: 'jane@example.com', password: 'correct-password' }), undefined as never)
+
+    expect(response.status).toBe(403)
+    expect((await response.json()).token).toBeUndefined()
+  })
+
   it('rejects a malformed body with 400 before touching the database', async () => {
     const response = await POST(loginRequest({ email: 'not-an-email' }), undefined as never)
 

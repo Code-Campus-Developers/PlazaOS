@@ -62,4 +62,31 @@ describe('PATCH /tenants/:id', () => {
 
     expect(response.status).toBe(409)
   })
+
+  it('refuses to mark a password-less tenant active', async () => {
+    // An account with no password can never sign in (login rejects accounts
+    // without a passwordHash) and its invitation can never be redeemed (that
+    // requires accountStatus 'pending'), so this would strand the tenant
+    // with no way back in.
+    const user = { _id: 'tenant-1', role: 'tenant', accountStatus: 'pending', passwordHash: undefined, save: vi.fn() }
+    vi.mocked(User.findOne).mockResolvedValue(user as never)
+    vi.mocked(Lease.findOne).mockReturnValue({ sort: vi.fn().mockResolvedValue(null) } as never)
+
+    const response = await PATCH(adminRequest({ accountStatus: 'active' }), { params: Promise.resolve({ id: 'tenant-1' }) })
+
+    expect(response.status).toBe(409)
+    expect(user.save).not.toHaveBeenCalled()
+    expect(user.accountStatus).toBe('pending')
+  })
+
+  it('allows the account status to be changed once the tenant has a password', async () => {
+    const user = { _id: 'tenant-1', role: 'tenant', accountStatus: 'active', passwordHash: 'hash', save: vi.fn().mockResolvedValue(undefined) }
+    vi.mocked(User.findOne).mockResolvedValue(user as never)
+    vi.mocked(Lease.findOne).mockReturnValue({ sort: vi.fn().mockResolvedValue(null) } as never)
+
+    const response = await PATCH(adminRequest({ accountStatus: 'temporary' }), { params: Promise.resolve({ id: 'tenant-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(user.accountStatus).toBe('temporary')
+  })
 })

@@ -24,12 +24,12 @@ function mockAuth(overrides: Partial<ReturnType<typeof useAuth>>) {
 }
 
 function renderAt(initialPath: string, requiredRole: Role, protectedPath = initialPath) {
-  const setPasswordRoute = (
+  const accountSetupRoute = (
     <Route
-      path="/tenant/set-password"
+      path="/tenant/account-setup"
       element={
         <ProtectedRoute requiredRole="tenant">
-          <div>Set password page</div>
+          <div>Account setup page</div>
         </ProtectedRoute>
       }
     />
@@ -41,8 +41,8 @@ function renderAt(initialPath: string, requiredRole: Role, protectedPath = initi
         <Route path="/login" element={<div>Login page</div>} />
         <Route path="/admin" element={<div>Admin dashboard</div>} />
         <Route path="/tenant" element={<div>Tenant dashboard</div>} />
-        {setPasswordRoute}
-        {protectedPath !== '/tenant/set-password' ? (
+        {accountSetupRoute}
+        {protectedPath !== '/tenant/account-setup' ? (
           <Route
             path={protectedPath}
             element={
@@ -73,12 +73,12 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('Tenant dashboard')).toBeInTheDocument()
   })
 
-  it('redirects a tenant still on a temporary password to /tenant/set-password', () => {
+  it('redirects a tenant still on a temporary password to /tenant/account-setup', () => {
     const tenantUser: AuthUser = { id: 't1', name: 'Tenant', email: 't@plaza.test', role: 'tenant', mustChangePassword: true }
     mockAuth({ isAuthenticated: true, role: 'tenant', user: tenantUser })
     renderAt('/tenant/dashboard', 'tenant')
 
-    expect(screen.getByText('Set password page')).toBeInTheDocument()
+    expect(screen.getByText('Account setup page')).toBeInTheDocument()
   })
 
   it('renders children for a correctly-authenticated, correctly-roled user', () => {
@@ -89,11 +89,11 @@ describe('ProtectedRoute', () => {
     expect(screen.getByText('Protected content')).toBeInTheDocument()
   })
 
-  it('renders children for a tenant on a temporary password already at /tenant/set-password', () => {
+  it('renders children for a tenant on a temporary password already at /tenant/account-setup', () => {
     const tenantUser: AuthUser = { id: 't1', name: 'Tenant', email: 't@plaza.test', role: 'tenant', mustChangePassword: true }
     mockAuth({ isAuthenticated: true, role: 'tenant', user: tenantUser })
-    renderAt('/tenant/set-password', 'tenant')
+    renderAt('/tenant/account-setup', 'tenant')
 
-    expect(screen.getByText('Set password page')).toBeInTheDocument()
+    expect(screen.getByText('Account setup page')).toBeInTheDocument()
   })
 })

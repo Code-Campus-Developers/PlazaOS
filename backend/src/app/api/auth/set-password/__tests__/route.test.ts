@@ -4,11 +4,13 @@ import { POST } from '@/app/api/auth/set-password/route'
 import { signToken } from '@/lib/jwt'
 import { User } from '@/models/User'
 import { rateLimit } from '@/lib/rate-limit'
+import { invalidateOutstandingInvitations } from '@/lib/account-invitation'
 
 vi.mock('@/lib/db', () => ({ dbConnect: vi.fn() }))
 vi.mock('@/models/User', () => ({ User: { findById: vi.fn() } }))
 vi.mock('@/lib/password', () => ({ hashPassword: vi.fn(async () => 'hashed-new-password') }))
 vi.mock('@/lib/rate-limit', () => ({ rateLimit: vi.fn() }))
+vi.mock('@/lib/account-invitation', () => ({ invalidateOutstandingInvitations: vi.fn() }))
 
 function tenantRequest(body: unknown, headers: Record<string, string> = {}) {
   const token = signToken({ sub: 'tenant-1', role: 'tenant' })
@@ -49,6 +51,25 @@ describe('POST /auth/set-password', () => {
     expect(user.passwordHash).toBe('hashed-new-password')
     expect(user.mustChangePassword).toBe(false)
     expect(user.save).toHaveBeenCalledOnce()
+  })
+
+  it('activates the account and invalidates any outstanding invitation', async () => {
+    const user = {
+      _id: 'tenant-1',
+      passwordHash: 'old-hash',
+      mustChangePassword: true,
+      accountStatus: 'pending',
+      save: vi.fn().mockResolvedValue(undefined),
+    }
+    vi.mocked(User.findById).mockResolvedValue(user as never)
+
+    await POST(tenantRequest({ newPassword: 'longenoughpassword' }), undefined as never)
+
+    // The account has a password of the user's own choosing now, so it is no
+    // longer awaiting setup.
+    expect(user.accountStatus).toBe('active')
+    // A still-live invitation link must not be able to overwrite this password.
+    expect(invalidateOutstandingInvitations).toHaveBeenCalledWith('tenant-1')
   })
 
   it('is rate-limited per authenticated user id', async () => {

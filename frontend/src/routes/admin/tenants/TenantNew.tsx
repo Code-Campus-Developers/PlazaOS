@@ -5,13 +5,14 @@ import { BackLink } from '../components/BackLink'
 import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { getUnits } from '../units/data'
-import { TempPasswordReveal } from './TempPasswordReveal'
-import { addTenant } from './data'
+import { InvitationNotice } from './InvitationNotice'
+import { addTenant, type InvitationResult } from './data'
+import { formatNaira } from '../../../lib/formatNaira'
 import type { Tenant, Unit } from '../data/types'
 
 interface CreatedTenant {
   tenant: Tenant
-  tempPassword: string
+  invitation: InvitationResult
 }
 
 // Submits to POST /tenants — see addTenant() in ./data.ts. The backend
@@ -32,6 +33,7 @@ export function TenantNew() {
   const [monthlyRent, setMonthlyRent] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [created, setCreated] = useState<CreatedTenant | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -62,6 +64,7 @@ export function TenantNew() {
     const selectedUnit = vacantUnits.find((unit) => unit.id === selectedUnitId)
     if (!selectedUnit) return
 
+    setSubmitError(null)
     setIsSubmitting(true)
     try {
       const result = await addTenant({
@@ -75,6 +78,8 @@ export function TenantNew() {
         monthlyRent: Number(monthlyRent),
       })
       setCreated(result)
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to create the tenant. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -87,7 +92,7 @@ export function TenantNew() {
           title="Tenant created"
           description={`${created.tenant.name} has been added to unit ${created.tenant.unitNumber}.`}
         />
-        <TempPasswordReveal email={created.tenant.email} tempPassword={created.tempPassword} />
+        <InvitationNotice email={created.tenant.email} invitation={created.invitation} />
         <Link
           to={`/admin/tenants/${created.tenant.id}`}
           className="mt-4 inline-flex min-h-[44px] items-center text-[15px] font-medium text-primary hover:text-primary-light"
@@ -128,7 +133,7 @@ export function TenantNew() {
             label="Unit"
             value={selectedUnitId}
             onChange={(event) => handleUnitChange(event.target.value)}
-            options={vacantUnits.map((unit) => ({ value: unit.id, label: `${unit.unitNumber} — $${unit.monthlyRent.toLocaleString()}/mo` }))}
+            options={vacantUnits.map((unit) => ({ value: unit.id, label: `${unit.unitNumber} — ${formatNaira(unit.monthlyRent)}/mo` }))}
           />
           <Input label="Lease start" type="date" value={leaseStart} onChange={(event) => setLeaseStart(event.target.value)} required />
           <Input label="Lease end" type="date" value={leaseEnd} onChange={(event) => setLeaseEnd(event.target.value)} required />
@@ -142,6 +147,7 @@ export function TenantNew() {
             helperText="Auto-filled from the selected unit — editable."
             required
           />
+          {submitError ? <Text variant="bodySmall" className="text-danger">{submitError}</Text> : null}
           <Button type="submit" disabled={isSubmitting} className="w-full">
             {isSubmitting ? 'Creating…' : 'Create tenant'}
           </Button>

@@ -6,7 +6,8 @@ import { RentCharge } from '@/models/RentCharge'
 import { User } from '@/models/User'
 import { ApiError } from '@/lib/api-error'
 import { buildReceiptUrl } from '@/lib/receipt-token'
-import { initializeTransaction } from '@/lib/paystack'
+import { initializeTransaction, paystackCurrency } from '@/lib/paystack'
+import { publicAppUrl } from '@/lib/app-url'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
 
 export { corsOptions as OPTIONS }
@@ -68,6 +69,26 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   if (rentCharge.status === 'paid') throw new ApiError('This rent charge has already been paid', 409)
   if (rentCharge.status === 'upcoming') throw new ApiError('This rent charge is not due yet', 400)
 
+  // One payment per rent charge: a second in-flight transaction for the same
+  // charge would let the tenant be charged twice for one period.
+  const existing = await Payment.findOne({
+    rentChargeId: rentCharge._id,
+    status: { $in: ['pending', 'paid'] },
+  })
+  if (existing) {
+    throw new ApiError(
+      existing.status === 'paid'
+        ? 'This rent charge has already been paid'
+        : 'A payment for this rent charge is already in progress',
+      409,
+    )
+  }
+
+  // Resolve the callback URL before any record is created: a misconfigured
+  // FRONTEND_URL must fail loudly, and it must not leave a `pending` payment
+  // behind that would block the tenant from ever retrying this charge.
+  const frontendUrl = publicAppUrl()
+
   const payment = await Payment.create({
     tenantId: user._id,
     tenantName: user.name,
@@ -75,12 +96,12 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     unitNumber: user.unitNumber ?? 'unassigned',
     rentChargeId: rentCharge._id,
     amount: rentCharge.amount,
+    currency: paystackCurrency(),
     method: 'gateway',
     status: 'pending',
     date: new Date().toISOString().slice(0, 10),
   })
 
-  const frontendUrl = process.env.FRONTEND_URL ?? 'http://localhost:5173'
   const reference = `plazaos_${payment._id.toString()}`
 
   try {

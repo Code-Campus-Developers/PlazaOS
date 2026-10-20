@@ -6,6 +6,7 @@ import { Select } from '../components/Select'
 import { useAsyncData } from '../components/useAsyncData'
 import type { Unit, UnitStatus } from '../data/types'
 import { getAvailableFloors, getUnits, type GetUnitsResult, type SortDirection, type UnitSortField } from './data'
+import { formatNaira } from '../../../lib/formatNaira'
 
 const PAGE_SIZE = 20
 
@@ -55,7 +56,7 @@ const columns: TableColumn<Unit>[] = [
   },
   { key: 'floor', header: 'Floor' },
   { key: 'sizeSqft', header: 'Size', render: (unit) => `${unit.sizeSqft} sqft` },
-  { key: 'monthlyRent', header: 'Monthly rent', render: (unit) => `$${unit.monthlyRent.toLocaleString()}` },
+  { key: 'monthlyRent', header: 'Monthly rent', render: (unit) => formatNaira(unit.monthlyRent) },
   { key: 'tenantName', header: 'Tenant', render: (unit) => unit.tenantName ?? '—' },
   {
     key: 'status',

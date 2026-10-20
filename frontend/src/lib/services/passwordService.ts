@@ -1,5 +1,4 @@
 import { api } from '../api'
-import type { AuthUser } from '../../context/AuthContext'
 
 export interface ChangePasswordPayload {
   currentPassword: string
@@ -7,11 +6,11 @@ export interface ChangePasswordPayload {
 }
 
 export interface ChangePasswordResponse {
-  user?: AuthUser
+  success: boolean
 }
 
 export const passwordService = {
-  async changePassword(payload: ChangePasswordPayload): Promise<ChangePasswordResponse | undefined> {
-    return await api.post<ChangePasswordResponse | undefined>('/auth/change-password', payload)
+  async changePassword(payload: ChangePasswordPayload): Promise<ChangePasswordResponse> {
+    return api.post<ChangePasswordResponse>('/auth/change-password', payload)
   },
 }

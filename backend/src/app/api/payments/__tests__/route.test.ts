@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
+import mongoose from 'mongoose'
 import { GET, POST } from '@/app/api/payments/route'
 import { signToken } from '@/lib/jwt'
 import { Payment } from '@/models/Payment'
@@ -8,10 +9,11 @@ import { User } from '@/models/User'
 import { notifyPaymentOutcome } from '@/lib/notify-payment'
 
 vi.mock('@/lib/db', () => ({ dbConnect: vi.fn() }))
-vi.mock('@/models/Payment', () => ({ Payment: { find: vi.fn(), countDocuments: vi.fn(), create: vi.fn() } }))
+vi.mock('@/models/Payment', () => ({ Payment: { find: vi.fn(), countDocuments: vi.fn(), create: vi.fn(), findOne: vi.fn() } }))
 vi.mock('@/models/RentCharge', () => ({ RentCharge: { findById: vi.fn() } }))
 vi.mock('@/models/User', () => ({ User: { find: vi.fn(), findOne: vi.fn() } }))
 vi.mock('@/lib/notify-payment', () => ({ notifyPaymentOutcome: vi.fn() }))
+vi.mock('mongoose', () => ({ default: { startSession: vi.fn() } }))
 
 function adminGet(url: string) {
   const token = signToken({ sub: 'admin-1', role: 'admin' })
@@ -83,7 +85,17 @@ describe('GET /payments (admin)', () => {
 })
 
 describe('POST /payments (admin offline payment)', () => {
-  beforeEach(() => vi.clearAllMocks())
+  let session: { withTransaction: ReturnType<typeof vi.fn>; endSession: ReturnType<typeof vi.fn> }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(Payment.findOne).mockResolvedValue(null as never)
+    session = {
+      withTransaction: vi.fn(async (fn: () => Promise<void>) => fn()),
+      endSession: vi.fn(),
+    }
+    vi.mocked(mongoose.startSession).mockResolvedValue(session as never)
+  })
 
   it('rejects a request missing rentChargeId/method/date', async () => {
     const response = await POST(adminPost({}), undefined as never)
@@ -111,7 +123,7 @@ describe('POST /payments (admin offline payment)', () => {
     const rentCharge = { _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
     vi.mocked(RentCharge.findById).mockResolvedValue(rentCharge as never)
     vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper', unitNumber: 'A-101' } as never)
-    vi.mocked(Payment.create).mockResolvedValue({ _id: 'payment-1' } as never)
+    vi.mocked(Payment.create).mockResolvedValue([{ _id: 'payment-1' }] as never)
 
     const response = await POST(
       adminPost({ rentChargeId: 'rc-1', method: 'cash', date: '2026-08-01', note: 'paid in office' }),
@@ -121,10 +133,29 @@ describe('POST /payments (admin offline payment)', () => {
 
     expect(response.status).toBe(200)
     expect(json).toEqual({ success: true, id: 'payment-1' })
-    expect(Payment.create).toHaveBeenCalledWith(expect.objectContaining({ amount: 950, status: 'paid', rentChargeId: 'rc-1' }))
+    expect(Payment.create).toHaveBeenCalledWith(
+      [expect.objectContaining({ amount: 950, status: 'paid', rentChargeId: 'rc-1' })],
+      expect.objectContaining({ session: expect.anything() }),
+    )
     expect(rentCharge.status).toBe('paid')
     expect(rentCharge.save).toHaveBeenCalledOnce()
     expect(notifyPaymentOutcome).toHaveBeenCalledWith(expect.anything(), 'paid')
+  })
+
+  it('writes the payment and the rent charge in one transaction', async () => {
+    const rentCharge = { _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
+    vi.mocked(RentCharge.findById).mockResolvedValue(rentCharge as never)
+    vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper', unitNumber: 'A-101' } as never)
+    vi.mocked(Payment.create).mockResolvedValue([{ _id: 'payment-1' }] as never)
+
+    await POST(adminPost({ rentChargeId: 'rc-1', method: 'cash', date: '2026-08-01' }), undefined as never)
+
+    // A crash between the two writes would leave a `paid` payment against a
+    // charge that is still outstanding — a tenant billed for rent they
+    // already paid, with no way to re-settle it.
+    expect(session.withTransaction).toHaveBeenCalledOnce()
+    expect(rentCharge.save).toHaveBeenCalledWith(expect.objectContaining({ session: expect.anything() }))
+    expect(session.endSession).toHaveBeenCalledOnce()
   })
 
   it('rejects a tenant-role token with 403', async () => {
@@ -136,5 +167,39 @@ describe('POST /payments (admin offline payment)', () => {
     })
     const response = await POST(request, undefined as never)
     expect(response.status).toBe(403)
+  })
+
+  it('refuses to record a second payment for the same rent charge', async () => {
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1' } as never)
+    vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper' } as never)
+    vi.mocked(Payment.findOne).mockResolvedValue({ _id: 'payment-0' } as never)
+
+    const response = await POST(
+      adminPost({ rentChargeId: 'rc-1', method: 'cash', date: '2026-08-01' }),
+      undefined as never,
+    )
+
+    expect(response.status).toBe(409)
+    expect(Payment.create).not.toHaveBeenCalled()
+  })
+
+  it('does not let a refunded payment block a legitimate new payment for the same charge', async () => {
+    // A refunded payment's money came back, so the period can be paid again.
+    const rentCharge = { _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
+    vi.mocked(RentCharge.findById).mockResolvedValue(rentCharge as never)
+    vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper', unitNumber: 'A-101' } as never)
+    vi.mocked(Payment.create).mockResolvedValue([{ _id: 'payment-2' }] as never)
+
+    const response = await POST(
+      adminPost({ rentChargeId: 'rc-1', method: 'cash', date: '2026-08-01' }),
+      undefined as never,
+    )
+
+    expect(response.status).toBe(200)
+    // The guard only considers payments that still count against the balance.
+    expect(Payment.findOne).toHaveBeenCalledWith({
+      rentChargeId: 'rc-1',
+      status: { $in: ['pending', 'paid'] },
+    })
   })
 })

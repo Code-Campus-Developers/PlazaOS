@@ -5,6 +5,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { useAsyncData } from '../components/useAsyncData'
 import type { Payment, PaymentMethod, PaymentStatus } from '../data/types'
+import { formatNaira } from '../../../lib/formatNaira'
 import { getPayments, type GetPaymentsResult, type PaymentSortField, type SortDirection } from './data'
 
 const PAGE_SIZE = 20
@@ -13,12 +14,14 @@ const statusLabel: Record<PaymentStatus, string> = {
   paid: 'Paid',
   pending: 'Pending',
   failed: 'Failed',
+  refunded: 'Refunded',
 }
 
-const statusVariant: Record<PaymentStatus, 'success' | 'warning' | 'danger'> = {
+const statusVariant: Record<PaymentStatus, 'success' | 'warning' | 'danger' | 'neutral'> = {
   paid: 'success',
   pending: 'warning',
   failed: 'danger',
+  refunded: 'neutral',
 }
 
 const methodLabel: Record<PaymentMethod, string> = {
@@ -33,6 +36,7 @@ const statusOptions: { value: 'all' | PaymentStatus; label: string }[] = [
   { value: 'paid', label: 'Paid' },
   { value: 'pending', label: 'Pending' },
   { value: 'failed', label: 'Failed' },
+  { value: 'refunded', label: 'Refunded' },
 ]
 
 const methodOptions: { value: 'all' | PaymentMethod; label: string }[] = [
@@ -65,7 +69,7 @@ const columns: TableColumn<Payment>[] = [
   },
   { key: 'tenantName', header: 'Tenant' },
   { key: 'unitNumber', header: 'Unit' },
-  { key: 'amount', header: 'Amount', render: (payment) => `$${payment.amount.toLocaleString()}` },
+  { key: 'amount', header: 'Amount', render: (payment) => formatNaira(payment.amount) },
   { key: 'method', header: 'Method', render: (payment) => methodLabel[payment.method] },
   {
     key: 'status',

@@ -1,29 +1,30 @@
 import { useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthShell } from './AuthShell'
-import { requestPasswordReset } from './passwordResetTokens'
+import { authService } from '../lib/services/authService'
 
 export function ForgotPassword() {
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
-  const [devToken, setDevToken] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (submitting) return
     setSubmitting(true)
+    setError(null)
 
-    // TODO: becomes POST /auth/forgot-password once the backend exists — it
-    // must respond identically regardless of match, and send the email
-    // itself instead of this dev-only reveal below.
-    const token = await requestPasswordReset(email)
-
-    window.setTimeout(() => {
+    try {
+      await authService.forgotPassword(email)
+      window.setTimeout(() => {
+        setSubmitting(false)
+        setSubmitted(true)
+      }, 300)
+    } catch (err) {
       setSubmitting(false)
-      setSubmitted(true)
-      if (import.meta.env.DEV) setDevToken(token)
-    }, 300)
+      setError(err instanceof Error ? err.message : 'Failed to send reset email. Please try again.')
+    }
   }
 
   if (submitted) {
@@ -34,18 +35,6 @@ export function ForgotPassword() {
           <p className="mt-3 text-sm leading-relaxed text-[#6B6B7D]">
             If an account exists for that address, we've sent a link to reset the password. It expires in 30 minutes.
           </p>
-
-          {devToken && (
-            <div className="mt-6 rounded-lg border border-[#E6E6EF] bg-[#F7F7FA] p-4 text-left">
-              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-warning">Dev only — stands in for the email</p>
-              <Link
-                to={`/reset-password?token=${devToken}`}
-                className="mt-2 block break-all font-mono text-[13px] text-primary hover:underline"
-              >
-                /reset-password?token={devToken}
-              </Link>
-            </div>
-          )}
 
           <Link to="/login" className="mt-6 inline-block text-[13px] font-medium text-primary hover:underline">
             ← Back to sign in
@@ -59,6 +48,12 @@ export function ForgotPassword() {
     <AuthShell plateLabel="PLAZA OS · RESET PASSWORD">
       <h1 className="font-display text-2xl font-bold tracking-tight text-[#16161F]">Reset your password</h1>
       <p className="mt-2 text-sm leading-relaxed text-[#6B6B7D]">Enter your email and we'll send you a link to reset it.</p>
+
+      {error && (
+        <p className="mt-4 rounded-lg border border-[#F0D4D4] bg-[#FDF5F5] px-4 py-3 text-sm text-[#9B2C2C]" role="alert">
+          {error}
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-7 space-y-5" noValidate>
         <div>

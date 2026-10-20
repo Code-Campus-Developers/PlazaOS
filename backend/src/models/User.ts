@@ -5,7 +5,11 @@ const userSchema = new Schema(
   {
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    passwordHash: { type: String, required: true },
+    // Optional: a tenant created through the invitation flow has no password
+    // at all until they accept their invitation and choose one themselves.
+    // Such an account is marked `accountStatus: 'pending'` and can never log
+    // in (the login route rejects accounts without a passwordHash).
+    passwordHash: { type: String },
     role: { type: String, enum: ['admin', 'tenant'], required: true },
 
     // Tenant-only fields
@@ -14,7 +18,10 @@ const userSchema = new Schema(
     unitNumber: { type: String },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
 
-    accountStatus: { type: String, enum: ['temporary', 'active'], required: true, default: 'active' },
+    // 'pending'   = invitation sent, tenant has not set a password yet
+    // 'temporary' = legacy account still on a system-generated password
+    // 'active'    = the tenant has set their own password
+    accountStatus: { type: String, enum: ['pending', 'temporary', 'active'], required: true, default: 'active' },
     mustChangePassword: { type: Boolean, required: true, default: false },
   },
   { timestamps: true },

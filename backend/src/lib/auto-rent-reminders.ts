@@ -1,6 +1,7 @@
 import { RentCharge } from '@/models/RentCharge'
 import { Reminder } from '@/models/Reminder'
 import { User } from '@/models/User'
+import { formatAmount } from './currency'
 
 interface CreateRentRemindersResult {
   created: number
@@ -31,7 +32,7 @@ export async function createAutomaticRentReminders(now: Date = new Date()): Prom
     try {
       await Reminder.create({
         title: charge.status === 'overdue' ? 'Rent overdue' : 'Rent due',
-        message: `Your rent of $${charge.amount.toFixed(2)} for period ${charge.period} is ${charge.status} (due ${charge.dueDate}).`,
+        message: `Your rent of ${formatAmount(charge.amount)} for period ${charge.period} is ${charge.status} (due ${charge.dueDate}).`,
         type: 'automatic',
         target: 'tenant',
         targetTenantIds: [charge.tenantId],

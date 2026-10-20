@@ -59,3 +59,34 @@ describe('sendEmail', () => {
     await expect(sendEmail({ to: 'tenant@example.com', subject: 'Hi', html: '<p>Hi</p>' })).resolves.toBeUndefined()
   })
 })
+
+describe('escapeHtml', () => {
+  it('escapes angle brackets so a name cannot inject markup', async () => {
+    const { escapeHtml } = await import('@/lib/email')
+
+    expect(escapeHtml('<script>alert(1)</script>')).toBe(
+      '&lt;script&gt;alert(1)&lt;/script&gt;',
+    )
+  })
+
+  it('escapes ampersands first, so entities are not double-decoded', async () => {
+    const { escapeHtml } = await import('@/lib/email')
+
+    expect(escapeHtml('Tom & Jerry')).toBe('Tom &amp; Jerry')
+    expect(escapeHtml('&lt;b&gt;')).toBe('&amp;lt;b&amp;gt;')
+  })
+
+  it('escapes quotes so an attribute cannot be broken out of', async () => {
+    const { escapeHtml } = await import('@/lib/email')
+
+    expect(escapeHtml('" onmouseover="alert(1)')).toBe('&quot; onmouseover=&quot;alert(1)')
+    expect(escapeHtml("it's")).toBe('it&#39;s')
+  })
+
+  it('leaves ordinary text unchanged', async () => {
+    const { escapeHtml } = await import('@/lib/email')
+
+    expect(escapeHtml('Jane Cooper')).toBe('Jane Cooper')
+    expect(escapeHtml('Unit A-101, Block B')).toBe('Unit A-101, Block B')
+  })
+})

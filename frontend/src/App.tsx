@@ -28,7 +28,6 @@ import { Landing } from './routes/Landing'
 import { Login } from './routes/Login'
 import { ProtectedRoute } from './routes/ProtectedRoute'
 import { ResetPassword } from './routes/ResetPassword'
-import { SetPassword } from './routes/tenant/SetPassword'
 import { AccountSetup } from './routes/tenant/AccountSetup'
 import { TenantSetupGuard } from './routes/tenant/TenantSetupGuard'
 import { TenantHome } from './routes/tenant/TenantHome'
@@ -108,14 +107,9 @@ function AppRoutes() {
         <Route path="notifications" element={<AdminNotifications />} />
       </Route>
 
-      <Route
-        path="/tenant/account-setup"
-        element={
-          <ProtectedRoute requiredRole="tenant">
-            <AccountSetup />
-          </ProtectedRoute>
-        }
-      />
+      {/* Public: a tenant redeems their emailed setup invitation here, so this
+          route must render for a visitor who is not signed in yet. */}
+      <Route path="/tenant/account-setup" element={<AccountSetup />} />
 
       <Route
         path="/tenant"
@@ -129,7 +123,7 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<TenantHome />} />
-        <Route path="set-password" element={<SetPassword />} />
+        <Route path="set-password" element={<Navigate to="/tenant/account-setup" replace />} />
         <Route path="profile" element={<Profile />} />
         <Route path="payments" element={<Payments />} />
         <Route path="payments/new" element={<PaymentsNew />} />

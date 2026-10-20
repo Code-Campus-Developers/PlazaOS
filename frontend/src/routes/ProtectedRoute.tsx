@@ -8,7 +8,7 @@ interface ProtectedRouteProps {
   children: ReactNode
 }
 
-const TENANT_SET_PASSWORD_PATH = '/tenant/set-password'
+const TENANT_ACCOUNT_SETUP_PATH = '/tenant/account-setup'
 
 /**
  * Unauthenticated users are sent to /login. Authenticated users whose role
@@ -28,8 +28,8 @@ export function ProtectedRoute({ requiredRole, children }: ProtectedRouteProps) 
     return <Navigate to={`/${role}`} replace />
   }
 
-  if (role === 'tenant' && user?.mustChangePassword && location.pathname !== TENANT_SET_PASSWORD_PATH) {
-    return <Navigate to={TENANT_SET_PASSWORD_PATH} replace />
+  if (role === 'tenant' && user?.mustChangePassword && location.pathname !== TENANT_ACCOUNT_SETUP_PATH) {
+    return <Navigate to={TENANT_ACCOUNT_SETUP_PATH} replace />
   }
 
   return <>{children}</>

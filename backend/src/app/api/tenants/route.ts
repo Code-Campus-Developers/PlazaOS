@@ -7,9 +7,14 @@ import { Unit } from '@/models/Unit'
 import { Lease } from '@/models/Lease'
 import { RentCharge } from '@/models/RentCharge'
 import { ApiError } from '@/lib/api-error'
-import { generateTempPassword, hashPassword } from '@/lib/password'
 import { escapeRegex, parsePageParams } from '@/lib/list-query'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
+import {
+  deliverInvitationEmail,
+  issueAccountInvitation,
+  recordInvitationDelivery,
+  revokeInvitation,
+} from '@/lib/account-invitation'
 
 export { corsOptions as OPTIONS }
 
@@ -151,7 +156,7 @@ function rentDueDayFrom(leaseStart: string): number {
 // MongoDB deployment that supports transactions (a replica set — the default
 // for MongoDB Atlas/Railway-hosted MongoDB, but NOT a bare standalone `mongod`).
 export const POST = withErrorHandling(async (request: NextRequest) => {
-  requireRole(request, 'admin')
+  const auth = requireRole(request, 'admin')
   const body = await request.json().catch(() => null)
   const parsed = createTenantSchema.safeParse(body)
   if (!parsed.success) throw new ApiError('name, email, phone, unitId, leaseStart, leaseEnd, and monthlyRent are required', 400)
@@ -160,7 +165,18 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   const email = parsed.data.email.toLowerCase()
 
   const session = await mongoose.startSession()
-  let created: { tenantId: string; unitId: string; unitNumber: string; leaseId: string; tempPassword: string } | undefined
+  let created:
+    | {
+        tenantId: string
+        unitId: string
+        unitNumber: string
+        leaseId: string
+        name: string
+        rawToken: string
+        invitationId: string
+        expiresAt: Date
+      }
+    | undefined
 
   try {
     await session.withTransaction(async () => {
@@ -171,21 +187,20 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
       const existing = await User.findOne({ email }).session(session)
       if (existing) throw new ApiError('A user with this email already exists', 409)
 
-      const tempPassword = generateTempPassword()
-      const passwordHash = await hashPassword(tempPassword)
-
+      // The tenant is created WITHOUT a password: they choose their own via
+      // the invitation link. There is no temp password, and no password is
+      // ever known to the administrator.
       const [tenant] = await User.create(
         [
           {
             name: parsed.data.name,
             email,
-            passwordHash,
             role: 'tenant',
             phone: parsed.data.phone,
             unitId: unit._id,
             unitNumber: unit.unitNumber,
             status: 'active',
-            accountStatus: 'temporary',
+            accountStatus: 'pending',
             mustChangePassword: true,
           },
         ],
@@ -214,12 +229,17 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         { session },
       )
 
+      const invitation = await issueAccountInvitation(tenant._id, auth.sub, session)
+
       created = {
         tenantId: tenant._id.toString(),
         unitId: unit._id.toString(),
         unitNumber: unit.unitNumber,
         leaseId: lease._id.toString(),
-        tempPassword,
+        name: tenant.name,
+        rawToken: invitation.rawToken,
+        invitationId: invitation.invitationId,
+        expiresAt: invitation.expiresAt,
       }
     })
   } finally {
@@ -228,16 +248,36 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
 
   if (!created) throw new ApiError('Failed to create tenant', 500)
 
-  // Plaintext temp password is returned exactly once here and never logged or
-  // stored — see BACKEND_BUILD_PLAN.md §2/§13 ("Temp password delivery").
+  // The email goes out after the transaction commits — network I/O must never
+  // happen inside a transaction. The raw token is used here and then dropped;
+  // it is never persisted, logged, or returned to the administrator.
+  const delivery = await deliverInvitationEmail({
+    to: email,
+    name: created.name,
+    rawToken: created.rawToken,
+  })
+  await recordInvitationDelivery(created.invitationId, delivery)
+
+  if (delivery.status !== 'sent') {
+    // The email never went out, so nobody holds a working token. Revoke it
+    // and leave the account pending: the tenant still cannot log in, and the
+    // administrator can send a new invitation. Reporting this honestly is
+    // required — claiming "invitation sent" here would strand the tenant.
+    await revokeInvitation(created.invitationId)
+  }
+
   return NextResponse.json({
     success: true,
     id: created.tenantId,
-    name: parsed.data.name,
+    name: created.name,
     email,
     unitId: created.unitId,
     unitNumber: created.unitNumber,
     leaseId: created.leaseId,
-    tempPassword: created.tempPassword,
+    invitation: {
+      delivered: delivery.status === 'sent',
+      status: delivery.status,
+      expiresAt: created.expiresAt.toISOString(),
+    },
   })
 })

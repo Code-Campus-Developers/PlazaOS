@@ -5,6 +5,7 @@ import {
   CreditCard,
   Home,
   LayoutDashboard,
+  LogOut,
   Megaphone,
   Menu,
   User,
@@ -59,22 +60,30 @@ interface SidebarContentProps {
 }
 
 function SidebarContent({ navItems, role, userName, onLogout, onNavigate, onClose }: SidebarContentProps) {
+  const initials = (userName ?? '?')
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
   return (
-    <div className="flex h-full w-60 flex-col border-r border-slate-200 bg-white p-4">
-      <div className="mb-6 flex items-center justify-between px-1">
-        <span className="text-xl font-bold tracking-tight text-primary">Plaza OS</span>
+    <div className="flex h-full w-64 flex-col border-r border-slate-200 bg-white">
+      <div className="flex items-center justify-between px-5 py-4">
+        <span className="text-lg font-bold tracking-tight text-primary">Plaza OS</span>
         {onClose && (
           <button
             type="button"
             onClick={onClose}
             aria-label="Close navigation"
-            className="flex h-8 w-8 items-center justify-center rounded-button text-slate-500 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light md:hidden"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light md:hidden"
           >
             <X aria-hidden="true" size={18} />
           </button>
         )}
       </div>
-      <nav className="flex flex-1 flex-col gap-1">
+
+      <nav className="flex flex-1 flex-col gap-0.5 px-3">
         {navItems.map((item) => {
           const Icon = item.icon
           return (
@@ -84,28 +93,40 @@ function SidebarContent({ navItems, role, userName, onLogout, onNavigate, onClos
               end={item.end}
               onClick={onNavigate}
               className={({ isActive }) =>
-                `flex min-h-[44px] items-center gap-3 border-l-2 pl-3 pr-3 text-[15px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light focus-visible:ring-inset ${
+                `flex min-h-[44px] items-center gap-3 rounded-md px-3 text-[15px] transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light focus-visible:ring-offset-2 ${
                   isActive
-                    ? 'border-primary bg-indigo-50 font-medium text-primary'
-                    : 'border-transparent text-slate-600 hover:bg-slate-50'
+                    ? 'bg-primary text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100'
                 }`
               }
             >
-              <Icon aria-hidden="true" size={18} className="shrink-0" />
-              {item.label}
+              {({ isActive }) => (
+                <>
+                  <Icon aria-hidden="true" size={18} className={isActive ? 'text-white' : 'text-slate-500'} />
+                  <span className={isActive ? 'font-semibold' : 'font-medium'}>{item.label}</span>
+                </>
+              )}
             </NavLink>
           )
         })}
       </nav>
 
-      <div className="mt-4 border-t border-slate-200 pt-4">
-        <p className="truncate text-[15px] text-slate-900">{userName}</p>
-        <p className="mt-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">{role}</p>
+      <div className="border-t border-slate-100 p-3">
+        <div className="flex items-center gap-3 rounded-md px-2 py-2">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+            {initials}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-medium text-slate-900">{userName}</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-slate-500">{role}</p>
+          </div>
+        </div>
         <button
           type="button"
           onClick={onLogout}
-          className="mt-3 rounded text-[13px] font-medium text-slate-500 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light"
+          className="mt-1 flex w-full items-center gap-2 rounded-md px-2 py-2 text-[14px] font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light"
         >
+          <LogOut aria-hidden="true" size={16} />
           Log out
         </button>
       </div>
@@ -129,17 +150,19 @@ export function Layout() {
   }, [isMobileNavOpen])
 
   return (
-    <div className="flex min-h-screen bg-slate-200/20">
-      {/* Desktop sidebar — static, always visible */}
+    <div className="flex min-h-screen bg-slate-50">
       <div className="hidden md:block">
         <SidebarContent navItems={navItems} role={role} userName={user?.name} onLogout={logout} />
       </div>
 
-      {/* Mobile sidebar — off-canvas drawer */}
       {isMobileNavOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
-          <div aria-hidden="true" className="absolute inset-0 bg-black/30" onClick={() => setIsMobileNavOpen(false)} />
-          <div className="absolute inset-y-0 left-0">
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-black/30 backdrop-blur-sm"
+            onClick={() => setIsMobileNavOpen(false)}
+          />
+          <div className="absolute inset-y-0 left-0 w-64">
             <SidebarContent
               navItems={navItems}
               role={role}
@@ -158,7 +181,7 @@ export function Layout() {
             type="button"
             onClick={() => setIsMobileNavOpen(true)}
             aria-label="Open navigation"
-            className="flex h-9 w-9 items-center justify-center rounded-button text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light"
           >
             <Menu aria-hidden="true" size={20} />
           </button>

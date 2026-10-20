@@ -4,6 +4,7 @@ import { Button, Card, Select, StatusBadge, Text } from '../../components'
 import { usePayments } from '../../hooks/usePayments'
 import { useRentCharges } from '../../hooks/useRentCharges'
 import type { RentChargeStatus } from '../../lib/services/rentChargeService'
+import { formatNaira } from '../../lib/formatNaira'
 
 const statusVariant: Record<RentChargeStatus, 'success' | 'warning' | 'danger' | 'info'> = {
   paid: 'success',
@@ -64,7 +65,7 @@ export function PaymentsNew() {
               onChange={(event) => setSelectedId(event.target.value)}
               options={rentCharges.map((charge) => ({
                 value: charge.id,
-                label: `${charge.period} — $${charge.amount.toFixed(2)} (due ${charge.dueDate})`,
+                label: `${charge.period} — ${formatNaira(charge.amount)} (due ${charge.dueDate})`,
               }))}
             />
             {selected ? (

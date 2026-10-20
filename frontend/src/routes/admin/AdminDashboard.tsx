@@ -13,12 +13,14 @@ const paymentStatusLabel: Record<PaymentStatus, string> = {
   paid: 'Paid',
   pending: 'Pending',
   failed: 'Failed',
+  refunded: 'Refunded',
 }
 
-const paymentStatusVariant: Record<PaymentStatus, 'success' | 'warning' | 'danger'> = {
+const paymentStatusVariant: Record<PaymentStatus, 'success' | 'warning' | 'danger' | 'neutral'> = {
   paid: 'success',
   pending: 'warning',
   failed: 'danger',
+  refunded: 'neutral',
 }
 
 // Summary stats are computed client-side from the existing list endpoints
@@ -59,12 +61,11 @@ export function AdminDashboard() {
   const activeTenants = tenants.filter((tenant) => tenant.status === 'active').length
 
   return (
-
-    <div>
+    <div className="page-container">
       <PageHeader title="Dashboard" description="Plaza overview at a glance." />
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
+        <Card className="stat-card stat-primary">
           <Text variant="caption" className="text-slate-500">
             Units
           </Text>
@@ -75,7 +76,7 @@ export function AdminDashboard() {
             {occupiedUnits} occupied · {vacantUnits} vacant
           </Text>
         </Card>
-        <Card>
+        <Card className="stat-card stat-info">
           <Text variant="caption" className="text-slate-500">
             Active tenants
           </Text>
@@ -86,7 +87,7 @@ export function AdminDashboard() {
             of {tenants.length} total
           </Text>
         </Card>
-        <Card>
+        <Card className="stat-card stat-danger">
           <Text variant="caption" className="text-slate-500">
             Rent overdue
           </Text>
@@ -97,7 +98,7 @@ export function AdminDashboard() {
             tenant{overdueTenants === 1 ? '' : 's'} behind on rent
           </Text>
         </Card>
-        <Card>
+        <Card className="stat-card stat-warning">
           <Text variant="caption" className="text-slate-500">
             Open maintenance
           </Text>
@@ -111,19 +112,22 @@ export function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card>
-          <div className="mb-3 flex items-center justify-between">
-            <Text variant="h3">Recent payments</Text>
-            <Link to="/admin/payments" className="text-[13px] font-medium text-primary hover:text-primary-light">
-              View all
-            </Link>
-          </div>
-          <div className="flex flex-col gap-3">
+        <Card
+          header={
+            <>
+              <Text variant="h3">Recent payments</Text>
+              <Link to="/admin/payments" className="text-[13px] font-medium text-primary hover:text-primary-light">
+                View all
+              </Link>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-1">
             {recentPayments.map((payment) => (
               <Link
                 key={payment.id}
                 to={`/admin/payments/${payment.id}`}
-                className="flex items-center justify-between rounded-button px-2 py-2 hover:bg-slate-200/40"
+                className="flex items-center justify-between rounded-md px-3 py-2.5 transition-colors hover:bg-slate-50"
               >
                 <div>
                   <Text variant="body" className="text-slate-900">
@@ -133,22 +137,29 @@ export function AdminDashboard() {
                     {payment.unitNumber} · {payment.date}
                   </Text>
                 </div>
-                <StatusBadge variant={paymentStatusVariant[payment.status]} label={paymentStatusLabel[payment.status]} />
+                <StatusBadge
+                  variant={paymentStatusVariant[payment.status]}
+                  label={paymentStatusLabel[payment.status]}
+                  dot
+                />
               </Link>
             ))}
           </div>
         </Card>
 
-        <Card>
-          <div className="mb-3 flex items-center justify-between">
-            <Text variant="h3">Upcoming calendar</Text>
-            <Link to="/admin/calendar" className="text-[13px] font-medium text-primary hover:text-primary-light">
-              View calendar
-            </Link>
-          </div>
-          <div className="flex flex-col gap-3">
+        <Card
+          header={
+            <>
+              <Text variant="h3">Upcoming calendar</Text>
+              <Link to="/admin/calendar" className="text-[13px] font-medium text-primary hover:text-primary-light">
+                View calendar
+              </Link>
+            </>
+          }
+        >
+          <div className="flex flex-col gap-1">
             {upcomingEvents.map((event) => (
-              <div key={event.id} className="flex items-center justify-between px-2 py-2">
+              <div key={event.id} className="flex items-center justify-between px-3 py-2.5">
                 <div>
                   <Text variant="body" className="text-slate-900">
                     {event.title}

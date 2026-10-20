@@ -123,19 +123,37 @@ export interface AddTenantInput {
   monthlyRent: number
 }
 
+/** The delivery outcome of the setup invitation the backend emailed. */
+export interface InvitationResult {
+  delivered: boolean
+  status: 'sent' | 'failed' | 'not_configured' | 'pending'
+  expiresAt?: string
+}
+
 export interface AddTenantResult {
   tenant: Tenant
-  tempPassword: string
+  invitation: InvitationResult
 }
 
 /**
  * `POST /tenants` — creates the tenant, assigns the unit, and creates the
  * lease atomically server-side (see backend/src/app/api/tenants/route.ts);
  * this never needs a separate `updateUnit()` call afterward.
+ *
+ * The tenant sets their own password via the emailed setup link, so the
+ * response carries only the invitation's delivery status — never a password
+ * or a token.
  */
 export async function addTenant(input: AddTenantInput): Promise<AddTenantResult> {
+  // `unitNumber` is a local-only field: the backend derives it from the
+  // assigned unit and its schema rejects any extra field.
+  const { unitNumber, ...body } = input
   try {
-    const result = await api.post<{ success: boolean; id: string; tempPassword: string }>('/tenants', input)
+    const result = await api.post<{
+      success: boolean
+      id: string
+      invitation: InvitationResult
+    }>('/tenants', body)
     return {
       tenant: {
         id: result.id,
@@ -143,30 +161,29 @@ export async function addTenant(input: AddTenantInput): Promise<AddTenantResult>
         email: input.email,
         phone: input.phone,
         unitId: input.unitId,
-        unitNumber: input.unitNumber,
+        unitNumber,
         leaseStart: input.leaseStart,
         leaseEnd: input.leaseEnd,
         monthlyRent: input.monthlyRent,
         rentStatus: 'due',
         status: 'active',
-        accountStatus: 'temporary',
+        accountStatus: 'pending',
         mustChangePassword: true,
       },
-      tempPassword: result.tempPassword,
+      invitation: result.invitation,
     }
   } catch (err) {
     if (!import.meta.env.DEV) throw err
-    const tempPassword = generateTempPassword()
     const newTenant: Tenant = {
       id: `tenant-${Date.now()}`,
       ...input,
       rentStatus: 'due',
       status: 'active',
-      accountStatus: 'temporary',
+      accountStatus: 'pending',
       mustChangePassword: true,
     }
     mockTenants.push(newTenant)
-    return { tenant: newTenant, tempPassword }
+    return { tenant: newTenant, invitation: { delivered: true, status: 'sent' } }
   }
 }
 
@@ -196,35 +213,30 @@ export async function updateTenant(tenantId: string, updates: UpdateTenantInput)
 
 export interface ResetPasswordResult {
   email: string
-  tempPassword: string
+  invitation: InvitationResult
 }
 
-/** `POST /tenants/:tenantId/reset-password` — the new temp password is server-generated. */
+/**
+ * `POST /tenants/:tenantId/reset-password` — issues a fresh setup invitation
+ * and emails it to the tenant. The administrator only ever sees the delivery
+ * status, never a password or a token. Calling it again re-issues the
+ * invitation, so it also covers "resend invitation".
+ */
 export async function resetTenantPassword(tenantId: string): Promise<ResetPasswordResult> {
   try {
-    const result = await api.post<{ success: boolean; email: string; tempPassword: string }>(
-      `/tenants/${tenantId}/reset-password`,
-    )
-    return { email: result.email, tempPassword: result.tempPassword }
+    const result = await api.post<{
+      success: boolean
+      email: string
+      invitation: InvitationResult
+    }>(`/tenants/${tenantId}/reset-password`)
+    return { email: result.email, invitation: result.invitation }
   } catch (err) {
     if (!import.meta.env.DEV) throw err
     const tenant = mockTenants.find((existing) => existing.id === tenantId)
     if (!tenant) throw err
-    const tempPassword = generateTempPassword()
-    tenant.accountStatus = 'temporary'
+    tenant.accountStatus = 'pending'
     tenant.mustChangePassword = true
-    return { email: tenant.email, tempPassword }
+    return { email: tenant.email, invitation: { delivered: true, status: 'sent' } }
   }
-}
-
-const TEMP_PASSWORD_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789' // omits 0/O/1/l/I to avoid ambiguity
-
-/** DEV-only fallback generator — the real backend always generates/hashes this server-side. */
-function generateTempPassword(length = 8): string {
-  let password = ''
-  for (let i = 0; i < length; i += 1) {
-    password += TEMP_PASSWORD_CHARS[Math.floor(Math.random() * TEMP_PASSWORD_CHARS.length)]
-  }
-  return password
 }
 
