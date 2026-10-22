@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL?.trim()
 const TOKEN_KEY = 'plaza_os_token'
 
 export function getToken(): string | null {
@@ -52,6 +52,13 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const token = getToken()
   if (token) {
     headers.set('Authorization', `Bearer ${token}`)
+  }
+
+  if (!API_BASE_URL) {
+    throw new Error(
+      'VITE_API_BASE_URL is not set, so the API base URL is undefined and requests would be sent to ' +
+        'the wrong origin. Set VITE_API_BASE_URL (see frontend/.env.example) and rebuild the frontend.',
+    )
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {

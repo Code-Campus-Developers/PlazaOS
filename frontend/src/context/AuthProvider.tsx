@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { ApiError, api, clearToken, getToken, setToken } from '../lib/api'
-import { AuthContext, type AuthContextValue, type AuthUser, type Role } from './AuthContext'
+import { AuthContext, type AuthContextValue, type AuthUser } from './AuthContext'
 
 interface LoginResponse {
   token: string
@@ -8,15 +8,6 @@ interface LoginResponse {
 }
 
 const USER_KEY = 'plaza_os_user'
-
-// TODO: remove once the real backend's /auth/login is reachable — this lets
-// the app be exercised locally without a live login API.
-// mustChangePassword: true on the tenant so the dev login shortcut can
-// exercise the tenant first-login password-set gate end to end.
-const MOCK_USERS: Record<Role, AuthUser> = {
-  admin: { id: 'dev-admin', name: 'Dev Admin', email: 'admin@plaza.test', role: 'admin' },
-  tenant: { id: 'dev-tenant', name: 'Dev Tenant', email: 'tenant@plaza.test', role: 'tenant', mustChangePassword: true },
-}
 
 export { AuthContext }
 
@@ -49,13 +40,15 @@ export function AuthProvider({ children }: { children?: ReactNode }) {
     } catch (err: unknown) {
       // DEVELOPMENT ONLY: If backend is not available in development, fall back to a local mock account.
       // This block is safe to remove once the auth API is implemented.
-      const isDev = import.meta.env.DEV
-
+      // `import.meta.env.DEV` is statically replaced with `false` in production
+      // builds, so the mock credentials below are stripped from the production
+      // JavaScript bundle.
+      //
       // Check if the error is a network/connectivity issue or 404 (API not available)
       const isNetworkError = err instanceof TypeError || (err instanceof Error && /failed to fetch/i.test(err.message))
       const isNotFound = isApiError(err) && err.status === 404
 
-      if (isDev && (isNetworkError || isNotFound)) {
+      if (import.meta.env.DEV && (isNetworkError || isNotFound)) {
         // Console log for debugging (development only)
         console.log('[DEV] Auth API unavailable, using mock authentication fallback')
 
@@ -100,16 +93,6 @@ export function AuthProvider({ children }: { children?: ReactNode }) {
     }
   }, [])
 
-  const loginAsMock = useCallback((role: Role) => {
-    const mockUser = MOCK_USERS[role]
-    const mockToken = `dev-mock-token-${role}`
-    setToken(mockToken)
-    localStorage.setItem(USER_KEY, JSON.stringify(mockUser))
-    setTokenState(mockToken)
-    setUser(mockUser)
-    return mockUser
-  }, [])
-
   const completePasswordSetup = useCallback((updatedUser?: AuthUser) => {
     setUser((currentUser) => {
       if (!currentUser) return currentUser
@@ -133,11 +116,10 @@ export function AuthProvider({ children }: { children?: ReactNode }) {
       role: user?.role ?? null,
       isAuthenticated: Boolean(token && user),
       login,
-      loginAsMock,
       completePasswordSetup,
       logout,
     }),
-    [user, token, login, loginAsMock, completePasswordSetup, logout],
+    [user, token, login, completePasswordSetup, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

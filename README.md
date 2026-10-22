@@ -26,6 +26,38 @@ cp .env.example .env
 npm run dev
 ```
 
+## Deployment
+
+The two halves deploy to **different** platforms:
+
+| Component | Platform | Root Directory | Build / start |
+| --- | --- | --- | --- |
+| `frontend/` | **Vercel** (static hosting) | `frontend` | `npm run build` → `frontend/dist` (`frontend/vercel.json`) |
+| `backend/` | **Railway** (long-running Node process) | `backend` | `npm run build && npm start` → `next start -p $PORT` |
+
+The backend runs on **Railway, not Vercel**: it is a persistent Node server rather than a
+serverless function, and its reminder sweep is driven by a Railway Cron Job instead of an
+in-process timer. `BACKEND_BUILD_PLAN.md` §12 and §13 record that decision and its
+rationale — treat them as the source of truth over this summary.
+
+The halves are wired together by environment variables set on each platform:
+
+- **Frontend (Vercel):** `VITE_API_BASE_URL` = the Railway API's public URL + `/api`
+  (e.g. `https://plaza-os-api.up.railway.app/api`). The frontend build **fails** when this
+  is missing or empty, so set it on the Vercel project before the first deployment.
+- **Backend (Railway):** `CORS_ORIGIN` = comma-separated allow-list of browser origins
+  allowed to call the API — the local Vite dev origin plus the Vercel frontend's production
+  origin (never `*`); `FRONTEND_URL` = the frontend's public base URL, used to build
+  password-reset links.
+
+Also provisioned on Railway: a **Cron Job** that `POST`s `/api/cron/process-reminders`
+with `Authorization: Bearer <CRON_SECRET>` on the desired cadence, and a managed MongoDB
+(Atlas, or Railway's MongoDB plugin) whose automated backups cover the payment history.
+The health check targets `GET /api/health` (unauthenticated; reports MongoDB connectivity),
+and `npm start` binds the host-assigned `PORT`, falling back to `4000` locally.
+
+Never commit a `.env` file — only `.env.example` is tracked.
+
 ## Folder Structure
 
 ```

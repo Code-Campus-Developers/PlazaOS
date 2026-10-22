@@ -16,7 +16,6 @@ export interface AuthContextValue {
   role: Role | null
   isAuthenticated: boolean
   login: (email: string, password: string) => Promise<AuthUser>
-  loginAsMock: (role: Role) => AuthUser
   completePasswordSetup: (updatedUser?: AuthUser) => void
   logout: () => void
 }

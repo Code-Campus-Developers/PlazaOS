@@ -39,7 +39,6 @@ describe('AccountSetup', () => {
       role: 'tenant',
       isAuthenticated: true,
       login: vi.fn(),
-      loginAsMock: vi.fn(),
       completePasswordSetup,
       logout: vi.fn(),
     })

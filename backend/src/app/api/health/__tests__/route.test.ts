@@ -5,7 +5,7 @@ import { dbConnect } from '@/lib/db'
 vi.mock('@/lib/db', () => ({ dbConnect: vi.fn() }))
 vi.mock('mongoose', () => ({ default: { connection: { readyState: 1 } } }))
 
-describe('GET /health', () => {
+describe('GET /api/health', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('returns 200/ok when the database is connected', async () => {

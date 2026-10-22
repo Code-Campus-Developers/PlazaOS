@@ -70,24 +70,18 @@ describe('AuthContext', () => {
     expect(result.current.isAuthenticated).toBe(false)
   })
 
-  it('loginAsMock signs a user in without calling the API', () => {
+  it('logout clears the user and token', async () => {
+    mockedPost.mockResolvedValueOnce({
+      token: 'tok-tenant',
+      user: { id: '2', name: 'Tenant User', email: 'tenant@plaza.test', role: 'tenant' },
+    })
     const { result } = renderHook(() => useAuth(), { wrapper })
 
-    act(() => {
-      result.current.loginAsMock('admin')
+    await act(async () => {
+      await result.current.login('tenant@plaza.test', 'secret')
     })
-
     expect(result.current.isAuthenticated).toBe(true)
-    expect(result.current.role).toBe('admin')
-    expect(mockedPost).not.toHaveBeenCalled()
-  })
 
-  it('logout clears the user and token', () => {
-    const { result } = renderHook(() => useAuth(), { wrapper })
-
-    act(() => {
-      result.current.loginAsMock('tenant')
-    })
     act(() => {
       result.current.logout()
     })

@@ -14,7 +14,7 @@ pnpm dev
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:4000](http://localhost:4000) with your browser to see the result.
 
 You can start editing the page by modifying `app/route.ts`. The page auto-updates as you edit the file.
 
@@ -27,11 +27,31 @@ To learn more about Next.js, take a look at the following resources:
 
 You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deploy on Vercel
+## Deployment
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+The backend deploys to **Railway**, not Vercel: it is a persistent Node server rather than
+a serverless function, and its reminder sweep is driven by a Railway Cron Job instead of an
+in-process timer. `BACKEND_BUILD_PLAN.md` §12 and §13 record that decision and its
+rationale — treat them as the source of truth over this summary.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Start command:** `npm run build && npm start` — `npm start` runs `scripts/start.js`, which
+  listens on the host's `PORT` (Railway assigns one dynamically) and falls back to `4000`
+  locally. See `backend/railway.json`.
+- **Health check:** `GET /api/health` (unauthenticated; reports MongoDB connectivity)
+- **Cron Job:** `POST /api/cron/process-reminders` with `Authorization: Bearer <CRON_SECRET>`
+- **Database:** a managed MongoDB (MongoDB Atlas, or Railway's MongoDB plugin) — its
+  automated backups cover the payment history
+
+The Railway service's **Root Directory must be `backend/`** — that is where
+`railway.json` and `package.json` live, and Railway reads `railway.json` from the service
+root. `railway.json` pins the start command to `npm start` and the health check to
+`/api/health`; both can equally be set in the Railway dashboard instead.
+
+Environment variables are documented in `backend/.env.example`; set them as Railway service
+variables. The frontend's production origin must be listed in `CORS_ORIGIN`, and
+`FRONTEND_URL` must be the frontend's public base URL (it is used to build
+password-reset links). The frontend itself is deployed to Vercel — see the Deployment
+section of the repository README.
 
 ## API Routes
 
