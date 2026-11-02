@@ -10,6 +10,8 @@ import { notifyPaymentOutcome } from '@/lib/notify-payment'
 import { escapeRegex, parsePageParams } from '@/lib/list-query'
 import { CURRENCY } from '@/lib/currency'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
+import { reconcileStalePendingPayment } from '@/lib/reconcile-pending-payment'
+import { ensureActivePaymentIndex } from '@/lib/payment-index-readiness'
 
 export { corsOptions as OPTIONS }
 
@@ -96,6 +98,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   if (!parsed.success) throw new ApiError('rentChargeId, method, and date are required', 400)
 
   await dbConnect()
+  await ensureActivePaymentIndex()
   const rentCharge = await RentCharge.findById(parsed.data.rentChargeId).catch(() => null)
   if (!rentCharge) throw new ApiError('Rent charge not found', 404)
   if (rentCharge.status === 'paid') throw new ApiError('This rent charge has already been paid', 409)
@@ -111,7 +114,11 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     rentChargeId: rentCharge._id,
     status: { $in: ['pending', 'paid'] },
   })
-  if (existing) throw new ApiError('A payment for this rent charge already exists', 409)
+  if (existing) {
+    if (existing.status === 'paid') throw new ApiError('This rent charge has already been paid', 409)
+    const outcome = await reconcileStalePendingPayment(existing)
+    if (outcome !== 'released') throw new ApiError('A payment for this rent charge already exists', 409)
+  }
 
   // The payment record and the rent charge's status are written in one
   // transaction, so a failure between them can never leave a `paid` payment
@@ -145,6 +152,9 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
       rentCharge.status = 'paid'
       await rentCharge.save({ session })
     })
+  } catch (err: any) {
+    if (err?.code === 11000) throw new ApiError('A payment for this rent charge already exists', 409)
+    throw err
   } finally {
     await session.endSession()
   }

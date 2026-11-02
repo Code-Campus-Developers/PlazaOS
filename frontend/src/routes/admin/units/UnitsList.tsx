@@ -1,11 +1,11 @@
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
 import { Button, Input, StatusBadge, Table, Text } from '../../../components'
 import type { TableColumn } from '../../../components'
 import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { useAsyncData } from '../components/useAsyncData'
 import type { Unit, UnitStatus } from '../data/types'
-import { getAvailableFloors, getUnits, type GetUnitsResult, type SortDirection, type UnitSortField } from './data'
+import { getAvailableFloors, getUnits, deleteUnit, type GetUnitsResult, type SortDirection, type UnitSortField } from './data'
 import { formatNaira } from '../../../lib/formatNaira'
 
 const PAGE_SIZE = 20
@@ -63,6 +63,15 @@ const columns: TableColumn<Unit>[] = [
     header: 'Status',
     render: (unit) => <StatusBadge variant={statusVariant[unit.status]} label={statusLabel[unit.status]} />,
   },
+  {
+    key: 'actions',
+    header: 'Actions',
+    render: (unit) => (
+      <Button variant="danger" onClick={() => handleDelete(unit)} disabled={deletingId === unit.id}>
+        {deletingId === unit.id ? 'Deleting…' : 'Delete'}
+      </Button>
+    ),
+  },
 ]
 
 // Fetches units from GET /units (see getUnits() in ./data.ts).
@@ -77,7 +86,19 @@ export function UnitsList() {
   const sortDir = (searchParams.get('sortDir') as SortDirection | null) ?? 'asc'
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
 
-  const { data: result } = useAsyncData<GetUnitsResult>(
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const handleDelete = async (unit: Unit) => {
+    if (!window.confirm(`Delete unit ${unit.unitNumber}?`)) return
+    setDeletingId(unit.id)
+    try {
+      await deleteUnit(unit.id)
+      window.location.reload()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Delete failed')
+    } finally {
+      setDeletingId(null)
+    }
+  }
     () => getUnits({ search, status, floor, sortBy, sortDir, page, pageSize: PAGE_SIZE }),
     [search, status, floor, sortBy, sortDir, page],
     { data: [], total: 0, page, pageSize: PAGE_SIZE },

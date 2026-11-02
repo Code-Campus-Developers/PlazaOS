@@ -10,7 +10,7 @@ const maintenanceRequestSchema = new Schema(
     description: { type: String, required: true },
     category: { type: String },
     status: { type: String, enum: ['open', 'in_progress', 'resolved'], required: true, default: 'open' },
-    priority: { type: String, enum: ['low', 'medium', 'high'], required: true, default: 'medium' },
+    priority: { type: String, enum: ['low', 'medium', 'high', 'urgent'], required: true, default: 'medium' },
     // Cloudinary is the storage backend — only the URL/public id lives here, never raw image bytes.
     images: [{ url: { type: String, required: true }, publicId: { type: String, required: true }, _id: false }],
     notes: { type: String, default: '' },

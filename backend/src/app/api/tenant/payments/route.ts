@@ -9,6 +9,8 @@ import { buildReceiptUrl } from '@/lib/receipt-token'
 import { initializeTransaction, paystackCurrency } from '@/lib/paystack'
 import { publicAppUrl } from '@/lib/app-url'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
+import { reconcileStalePendingPayment } from '@/lib/reconcile-pending-payment'
+import { ensureActivePaymentIndex } from '@/lib/payment-index-readiness'
 
 export { corsOptions as OPTIONS }
 
@@ -61,6 +63,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   if (!parsed.success) throw new ApiError('A rentChargeId is required', 400)
 
   await dbConnect()
+  await ensureActivePaymentIndex()
   const user = await User.findById(auth.sub)
   if (!user) throw new ApiError('Not found', 404)
 
@@ -70,18 +73,20 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   if (rentCharge.status === 'upcoming') throw new ApiError('This rent charge is not due yet', 400)
 
   // One payment per rent charge: a second in-flight transaction for the same
-  // charge would let the tenant be charged twice for one period.
+  // charge would let the tenant be charged twice for one period. A stale pending
+  // payment is reconciled against Paystack first; only a live one blocks.
   const existing = await Payment.findOne({
     rentChargeId: rentCharge._id,
     status: { $in: ['pending', 'paid'] },
   })
   if (existing) {
-    throw new ApiError(
-      existing.status === 'paid'
-        ? 'This rent charge has already been paid'
-        : 'A payment for this rent charge is already in progress',
-      409,
-    )
+    if (existing.status === 'paid') {
+      throw new ApiError('This rent charge has already been paid', 409)
+    }
+    const outcome = await reconcileStalePendingPayment(existing)
+    if (outcome !== 'released') {
+      throw new ApiError('A payment for this rent charge is already in progress', 409)
+    }
   }
 
   // Resolve the callback URL before any record is created: a misconfigured
@@ -89,18 +94,26 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   // behind that would block the tenant from ever retrying this charge.
   const frontendUrl = publicAppUrl()
 
-  const payment = await Payment.create({
-    tenantId: user._id,
-    tenantName: user.name,
-    unitId: user.unitId,
-    unitNumber: user.unitNumber ?? 'unassigned',
-    rentChargeId: rentCharge._id,
-    amount: rentCharge.amount,
-    currency: paystackCurrency(),
-    method: 'gateway',
-    status: 'pending',
-    date: new Date().toISOString().slice(0, 10),
-  })
+  let payment: any
+  try {
+    payment = await Payment.create({
+      tenantId: user._id,
+      tenantName: user.name,
+      unitId: user.unitId,
+      unitNumber: user.unitNumber ?? 'unassigned',
+      rentChargeId: rentCharge._id,
+      amount: rentCharge.amount,
+      currency: paystackCurrency(),
+      method: 'gateway',
+      status: 'pending',
+      date: new Date().toISOString().slice(0, 10),
+    })
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      throw new ApiError('A payment for this rent charge is already in progress', 409)
+    }
+    throw err
+  }
 
   const reference = `plazaos_${payment._id.toString()}`
 
@@ -118,9 +131,10 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
 
     return NextResponse.json({ success: true, id: payment._id.toString(), checkoutUrl: transaction.authorization_url })
   } catch (err) {
-    // The gateway call failed — don't leave a dangling pending record behind,
-    // and don't report success (per §7, success must follow a real gateway success).
-    await Payment.findByIdAndDelete(payment._id)
+    // The gateway call failed — mark the pending record failed (never delete,
+    // to preserve the audit trail) and don't report success.
+    payment.status = 'failed'
+    await payment.save().catch(() => {})
     console.error('Failed to initialize Paystack transaction', err)
     throw new ApiError('Unable to start payment. Please try again.', 502)
   }

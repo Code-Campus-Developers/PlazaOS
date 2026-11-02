@@ -13,6 +13,9 @@ const typeLabel: Record<CalendarEventType, string> = {
   lease_renewal: 'Lease renewal',
   reminder: 'Reminder',
   rent_due: 'Rent due',
+  meeting: 'Meeting',
+  inspection: 'Inspection',
+  eviction: 'Eviction',
   other: 'Other',
 }
 
@@ -20,6 +23,9 @@ const typeVariant: Record<CalendarEventType, 'info' | 'warning' | 'success' | 'd
   lease_renewal: 'info',
   reminder: 'warning',
   rent_due: 'danger',
+  meeting: 'info',
+  inspection: 'warning',
+  eviction: 'danger',
   other: 'success',
 }
 

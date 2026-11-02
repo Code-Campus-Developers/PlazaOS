@@ -42,7 +42,12 @@ paymentSchema.index({ date: 1 })
 // offline payments have no gateway reference at all.
 paymentSchema.index({ gatewayReference: 1 }, { unique: true, sparse: true })
 paymentSchema.index({ gatewayTransactionId: 1 }, { sparse: true })
-paymentSchema.index({ rentChargeId: 1 })
+// At most one live (pending or paid) payment per rent charge. Partial, so a
+// charge can be paid again once its prior payment has settled as failed/refunded.
+paymentSchema.index(
+  { rentChargeId: 1 },
+  { unique: true, partialFilterExpression: { status: { $in: ['pending', 'paid'] } } },
+)
 
 export type PaymentDoc = InferSchemaType<typeof paymentSchema>
 export const Payment = models.Payment ?? model('Payment', paymentSchema)

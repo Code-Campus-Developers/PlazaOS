@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, StatusBadge, Table, Text } from '../../../components'
 import type { TableColumn } from '../../../components'
@@ -5,7 +6,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { useAsyncData } from '../components/useAsyncData'
 import type { AccountStatus, RentStatus, Tenant } from '../data/types'
-import { getTenants, type GetTenantsResult, type SortDirection, type TenantSortField } from './data'
+import { getTenants, evictTenant, type GetTenantsResult, type SortDirection, type TenantSortField } from './data'
 
 const PAGE_SIZE = 20
 
@@ -82,11 +83,34 @@ const columns: TableColumn<Tenant>[] = [
       <StatusBadge variant={accountStatusVariant[tenant.accountStatus]} label={accountStatusLabel[tenant.accountStatus]} />
     ),
   },
+  {
+    key: 'actions',
+    header: 'Actions',
+    render: (tenant) => (
+      <Button variant="danger" onClick={() => handleDelete(tenant)} disabled={deletingId === tenant.id}>
+        {deletingId === tenant.id ? 'Evicting…' : 'Evict'}
+      </Button>
+    ),
+  },
 ]
 
 // Fetches tenants from GET /tenants (see getTenants() in ./data.ts).
 export function TenantsList() {
   const navigate = useNavigate()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const handleDelete = async (tenant: Tenant) => {
+    if (!window.confirm(`Evict tenant ${tenant.name}? This preserves their history.`)) return
+    const reason = window.prompt('Eviction reason (optional):') ?? undefined
+    setDeletingId(tenant.id)
+    try {
+      await evictTenant(tenant.id, reason || undefined)
+      window.location.reload()
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : 'Eviction failed')
+    } finally {
+      setDeletingId(null)
+    }
+  }
   const [searchParams, setSearchParams] = useSearchParams()
 
   const search = searchParams.get('search') ?? ''

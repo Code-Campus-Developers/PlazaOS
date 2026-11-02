@@ -1,6 +1,6 @@
 import { api } from '../api'
 
-export type CalendarEventType = 'rent_due' | 'reminder' | 'lease_renewal' | 'other'
+export type CalendarEventType = 'rent_due' | 'reminder' | 'lease_renewal' | 'meeting' | 'inspection' | 'eviction' | 'other'
 
 export interface CalendarEvent {
   id: string

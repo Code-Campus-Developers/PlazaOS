@@ -7,6 +7,20 @@ import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/ro
 
 export { corsOptions as OPTIONS }
 
+export const DELETE = withErrorHandling(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  requireRole(request, 'admin')
+  const { id } = await params
+  await dbConnect()
+  const unit = await Unit.findById(id).catch(() => null)
+  if (!unit) throw new ApiError('Unit not found', 404)
+  if (unit.tenantId) throw new ApiError('Cannot delete an occupied unit; unassign the tenant first', 409)
+  const { Lease } = await import('@/models/Lease')
+  const leases = await Lease.countDocuments({ unitId: unit._id })
+  if (leases) throw new ApiError('Cannot delete unit with linked leases', 409)
+  await Unit.deleteOne({ _id: unit._id })
+  return NextResponse.json({ success: true })
+})
+
 function toPublicUnit(doc: any) {
   return {
     id: doc._id.toString(),

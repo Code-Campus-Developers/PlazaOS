@@ -47,7 +47,7 @@ const createFieldsSchema = z
   .object({
     title: z.string().min(1),
     description: z.string().min(1),
-    priority: z.enum(['low', 'medium', 'high']).optional(),
+    priority: z.enum(['low', 'medium', 'high', 'urgent']).optional(),
     category: z.string().optional(),
   })
   .strict()
@@ -68,7 +68,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     priority: typeof priority === 'string' && priority ? priority : undefined,
     category: typeof category === 'string' && category ? category : undefined,
   })
-  if (!parsed.success) throw new ApiError('Title and description are required', 400)
+  if (!parsed.success) throw new ApiError(parsed.error.issues.map((i) => i.message).join('; ') || 'Invalid maintenance request', 400)
 
   const imageFiles = form.getAll('images').filter((entry): entry is File => entry instanceof File)
   const images = await saveMaintenanceImages(imageFiles)

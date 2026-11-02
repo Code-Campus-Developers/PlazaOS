@@ -149,3 +149,7 @@ export async function updateUnit(unitId: string, updates: UpdateUnitInput): Prom
   }
 }
 
+export async function deleteUnit(unitId: string): Promise<void> {
+  await api.delete(`/units/${unitId}`)
+}
+

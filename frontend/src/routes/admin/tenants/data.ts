@@ -103,7 +103,9 @@ export async function getTenants(params: GetTenantsParams = {}): Promise<GetTena
 }
 
 /** `GET /tenants/:tenantId`. */
-export async function getTenant(tenantId: string): Promise<Tenant | undefined> {
+export async function evictTenant(tenantId: string, reason?: string): Promise<void> {
+  await api.post(`/tenants/${tenantId}/evict`, reason ? { reason } : {})
+}
   try {
     return await api.get<Tenant>(`/tenants/${tenantId}`)
   } catch (err) {

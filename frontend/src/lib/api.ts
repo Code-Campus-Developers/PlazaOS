@@ -61,11 +61,30 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     )
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-    body: isFormData ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  })
+  if (!API_BASE_URL) {
+    throw new Error(
+      'VITE_API_BASE_URL is not set, so the API base URL is undefined and requests would be sent to ' +
+        'the wrong origin. Set VITE_API_BASE_URL (see frontend/.env.example) and rebuild the frontend.',
+    )
+  }
+
+  let response: Response
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      body: isFormData ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      signal: AbortSignal.timeout(15000),
+    })
+  } catch (err) {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      throw new ApiError('No internet connection. Please check your connection and try again.', 0)
+    }
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new ApiError('The request is taking too long. Please try again.', 408)
+    }
+    throw new ApiError('Unable to reach the server. Please try again shortly.', 0)
+  }
 
   if (response.status === 401) {
     clearToken()

@@ -9,6 +9,26 @@ import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/ro
 
 export { corsOptions as OPTIONS }
 
+export const DELETE = withErrorHandling(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  requireRole(request, 'admin')
+  const { id } = await params
+  await dbConnect()
+  const user = await User.findOne({ _id: id, role: 'tenant' }).catch(() => null)
+  if (!user) throw new ApiError('Tenant not found', 404)
+
+  const [leases, charges, payments, maintenance] = await Promise.all([
+    Lease.countDocuments({ tenantId: user._id }),
+    RentCharge.countDocuments({ tenantId: user._id }),
+    (await import('@/models/Payment')).Payment.countDocuments({ tenantId: user._id }),
+    (await import('@/models/MaintenanceRequest')).MaintenanceRequest.countDocuments({ tenantId: user._id }),
+  ])
+  if (leases || charges || payments || maintenance) {
+    throw new ApiError('Cannot delete tenant with linked leases, payments, rent charges, or maintenance requests', 409)
+  }
+  await User.deleteOne({ _id: user._id })
+  return NextResponse.json({ success: true })
+})
+
 function deriveRentStatus(charges: { status: string }[]): 'paid' | 'due' | 'overdue' {
   if (charges.some((charge) => charge.status === 'overdue')) return 'overdue'
   if (charges.some((charge) => charge.status === 'due')) return 'due'

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
-import { AuthShell } from './AuthShell'
+import { Spinner } from '../components/Spinner'
 
 type Role = 'admin' | 'tenant'
 
@@ -55,9 +55,14 @@ function LoginForm({ onSignIn, onComplete }: LoginFormProps) {
     try {
       const signedIn = await onSignIn(email.trim(), password)
       setUser(signedIn)
-    } catch {
-      // Deliberately generic: never reveal which field was wrong.
-      setError('Email or password is incorrect. Check both and try again.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      if (/no internet|taking too long|unable to reach/i.test(msg)) {
+        setError(msg)
+      } else {
+        setError('Incorrect email or password.')
+      }
+    } finally {
       setSubmitting(false)
     }
   }
@@ -140,7 +145,7 @@ function LoginForm({ onSignIn, onComplete }: LoginFormProps) {
               disabled={submitting}
               className="w-full rounded-lg bg-primary px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-primary-light focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {submitting ? 'Signing in…' : 'Sign in'}
+               {submitting ? <Spinner label="Signing in…" size={14} /> : 'Sign in'}
             </button>
           </form>
 

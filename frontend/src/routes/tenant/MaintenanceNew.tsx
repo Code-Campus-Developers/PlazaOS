@@ -1,6 +1,6 @@
 import { useForm } from 'react-hook-form'
 import { useMemo, useState } from 'react'
-import { Button, Card, Input, Text } from '../../components'
+import { Button, Card, Input, Text, Spinner } from '../../components'
 import { useMaintenance } from '../../hooks/useMaintenance'
 import { useNavigate } from 'react-router-dom'
 
@@ -103,7 +103,7 @@ export function MaintenanceNew() {
 
           <div className="flex justify-end">
             <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Submitting…' : 'Submit'}
+              {isSubmitting ? <Spinner label="Submitting request…" size={14} /> : 'Submit'}
             </Button>
           </div>
 

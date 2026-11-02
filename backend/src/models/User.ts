@@ -17,6 +17,8 @@ const userSchema = new Schema(
     unitId: { type: Schema.Types.ObjectId, ref: 'Unit' },
     unitNumber: { type: String },
     status: { type: String, enum: ['active', 'inactive'], default: 'active' },
+    evictionReason: { type: String },
+    evictedAt: { type: Date },
 
     // 'pending'   = invitation sent, tenant has not set a password yet
     // 'temporary' = legacy account still on a system-generated password

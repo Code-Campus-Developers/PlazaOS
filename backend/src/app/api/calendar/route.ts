@@ -102,7 +102,7 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
 const createCalendarEventSchema = z
   .object({
     title: z.string().min(1),
-    type: z.enum(['rent_due', 'lease_renewal', 'reminder', 'other']),
+    type: z.enum(['rent_due', 'lease_renewal', 'reminder', 'meeting', 'inspection', 'eviction', 'other']),
     date: z.string().min(1),
     relatedLabel: z.string().optional(),
   })

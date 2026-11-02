@@ -11,6 +11,10 @@ const typeOptions: { value: CalendarEventType; label: string }[] = [
   { value: 'lease_renewal', label: 'Lease renewal' },
   { value: 'reminder', label: 'Reminder' },
   { value: 'rent_due', label: 'Rent due' },
+  { value: 'meeting', label: 'Meeting' },
+  { value: 'inspection', label: 'Inspection' },
+  { value: 'eviction', label: 'Eviction' },
+  { value: 'other', label: 'Other' },
 ]
 
 // Submits to POST /calendar — see addCalendarEvent() in ./data.ts.
