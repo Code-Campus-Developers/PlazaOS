@@ -24,6 +24,19 @@ export function Maintenance() {
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<MaintenanceStatus | ''>('')
 
+  const requestColumns: TableColumn<MaintenanceRequest>[] = [
+    ...columns,
+    {
+      key: 'actions',
+      header: '',
+      render: (row) => (
+        <Button variant="secondary" onClick={() => navigate(`/tenant/maintenance/${row.id}`)}>
+          Details
+        </Button>
+      ),
+    },
+  ]
+
   const filtered = useMemo(() => {
     const rows: MaintenanceRequest[] = data?.data ?? []
     return rows.filter((r) => {
@@ -73,7 +86,7 @@ export function Maintenance() {
             </div>
           </div>
         ) : (
-          <Table columns={columns} data={filtered} getRowKey={(r) => r.id} />
+          <Table columns={requestColumns} data={filtered} getRowKey={(r) => r.id} />
         )}
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">

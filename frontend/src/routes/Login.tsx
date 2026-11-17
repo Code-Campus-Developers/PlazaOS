@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Loader2 } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/useAuth'
-import { Spinner } from '../components/Spinner'
+import { AuthShell } from './AuthShell'
 
 type Role = 'admin' | 'tenant'
 
@@ -102,6 +103,7 @@ function LoginForm({ onSignIn, onComplete }: LoginFormProps) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                disabled={submitting}
                 aria-invalid={!!error}
                 aria-describedby={error ? 'signin-error' : undefined}
                 className="w-full rounded-lg border border-[#E6E6EF] bg-white px-4 py-3 text-[15px] text-[#16161F] outline-none transition-colors placeholder:text-[#A8A8B8] focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -116,6 +118,7 @@ function LoginForm({ onSignIn, onComplete }: LoginFormProps) {
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
+                  disabled={submitting}
                   className="font-mono text-[11px] uppercase tracking-[0.14em] text-primary hover:underline"
                 >
                   {showPassword ? 'Hide' : 'Show'}
@@ -128,6 +131,7 @@ function LoginForm({ onSignIn, onComplete }: LoginFormProps) {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                disabled={submitting}
                 aria-invalid={!!error}
                 aria-describedby={error ? 'signin-error' : undefined}
                 className="w-full rounded-lg border border-[#E6E6EF] bg-white px-4 py-3 text-[15px] text-[#16161F] outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -143,9 +147,17 @@ function LoginForm({ onSignIn, onComplete }: LoginFormProps) {
             <button
               type="submit"
               disabled={submitting}
+              aria-busy={submitting}
               className="w-full rounded-lg bg-primary px-4 py-3.5 text-[15px] font-semibold text-white transition-colors hover:bg-primary-light focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
-               {submitting ? <Spinner label="Signing in…" size={14} /> : 'Sign in'}
+              {submitting ? (
+                <span role="status" aria-live="polite" className="inline-flex items-center justify-center gap-2">
+                  <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                  Signing in…
+                </span>
+              ) : (
+                'Sign in'
+              )}
             </button>
           </form>
 

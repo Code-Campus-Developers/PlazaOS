@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button, Card, Input, StatusBadge, Text } from '../../../components'
 import { BackLink } from '../components/BackLink'
 import { DetailField } from '../components/DetailField'
 import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
-import type { Unit, UnitStatus } from '../data/types'
-import { getUnit, updateUnit } from './data'
+import type { UnitStatus } from '../data/types'
+import { deleteUnit, getUnit, updateUnit } from './data'
 
 const statusLabel: Record<UnitStatus, string> = {
   occupied: 'Occupied',
@@ -29,39 +30,35 @@ const statusOptions: { value: UnitStatus; label: string }[] = [
 // Fetches this unit from GET /units/:unitId and saves via PATCH — see
 // getUnit()/updateUnit() in ./data.ts.
 export function UnitDetail() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { unitId } = useParams<{ unitId: string }>()
-  const [unit, setUnit] = useState<Unit | undefined>(undefined)
-  const [loading, setLoading] = useState(true)
+  const unitQuery = useQuery({
+    queryKey: ['admin-unit', unitId],
+    queryFn: () => getUnit(unitId!),
+    enabled: Boolean(unitId),
+  })
+  const unit = unitQuery.data
+  const [initializedUnitId, setInitializedUnitId] = useState<string>()
   const [floor, setFloor] = useState('')
   const [sizeSqft, setSizeSqft] = useState('')
   const [monthlyRent, setMonthlyRent] = useState('')
   const [status, setStatus] = useState<UnitStatus>('vacant')
   const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState(false)
+  const [deleteError, setDeleteError] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
-    if (!unitId) return
-    let cancelled = false
-    setLoading(true)
-    getUnit(unitId)
-      .then((found) => {
-        if (cancelled) return
-        setUnit(found)
-        if (found) {
-          setFloor(found.floor)
-          setSizeSqft(String(found.sizeSqft))
-          setMonthlyRent(String(found.monthlyRent))
-          setStatus(found.status)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [unitId])
+    if (!unit || initializedUnitId === unit.id) return
+    setFloor(unit.floor)
+    setSizeSqft(String(unit.sizeSqft))
+    setMonthlyRent(String(unit.monthlyRent))
+    setStatus(unit.status)
+    setInitializedUnitId(unit.id)
+  }, [unit, initializedUnitId])
 
-  if (loading) {
+  if (unitQuery.isLoading) {
     return (
       <div>
         <BackLink to="/admin/units" label="Back to units" />
@@ -70,11 +67,11 @@ export function UnitDetail() {
     )
   }
 
-  if (!unit) {
+  if (unitQuery.isError || !unit) {
     return (
       <div>
         <BackLink to="/admin/units" label="Back to units" />
-        <Text variant="body">Unit not found.</Text>
+        <Text variant="body">{unitQuery.isError ? 'Unable to load this unit from the server.' : 'Unit not found.'}</Text>
       </div>
     )
   }
@@ -89,6 +86,7 @@ export function UnitDetail() {
 
   async function handleSave() {
     setIsSaving(true)
+    setSaveError(false)
     try {
       const updated = await updateUnit(currentUnit.id, {
         floor,
@@ -96,11 +94,40 @@ export function UnitDetail() {
         monthlyRent: Number(monthlyRent),
         status,
       })
-      if (updated) setUnit(updated)
+      if (updated) {
+        queryClient.setQueryData(['admin-unit', currentUnit.id], updated)
+        void queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] })
+        void queryClient.invalidateQueries({ queryKey: ['admin-page', 'units'] })
+      }
+    } catch {
+      setSaveError(true)
     } finally {
       setIsSaving(false)
     }
   }
+
+  async function handleDelete() {
+    if (!window.confirm(`Permanently delete unit ${currentUnit.unitNumber}? This is only allowed when it has no tenant or historical records.`)) {
+      return
+    }
+    setIsDeleting(true)
+    setDeleteError(false)
+    try {
+      await deleteUnit(currentUnit.id)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'units'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'unit-floors'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] }),
+      ])
+      navigate('/admin/units')
+    } catch {
+      setDeleteError(true)
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const canDelete = currentUnit.status === 'vacant' && !currentUnit.tenantId
 
 
   return (
@@ -108,7 +135,19 @@ export function UnitDetail() {
       <BackLink to="/admin/units" label="Back to units" />
       <PageHeader
         title={`Unit ${currentUnit.unitNumber}`}
-        action={<StatusBadge variant={statusVariant[currentUnit.status]} label={statusLabel[currentUnit.status]} />}
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge variant={statusVariant[currentUnit.status]} label={statusLabel[currentUnit.status]} />
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={!canDelete || isDeleting || isSaving}
+            >
+              {isDeleting ? 'Deleting…' : 'Delete unit'}
+            </Button>
+          </div>
+        }
       />
       <Card className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         <Input label="Floor" value={floor} onChange={(event) => setFloor(event.target.value)} />
@@ -136,6 +175,8 @@ export function UnitDetail() {
             {isSaving ? 'Saving…' : 'Save changes'}
           </Button>
         </div>
+        {saveError ? <p role="alert" className="text-[13px] text-danger">Unable to save unit changes. Please try again.</p> : null}
+        {deleteError ? <p role="alert" className="text-[13px] text-danger">Unable to delete this unit. It may have linked tenant or historical records.</p> : null}
       </Card>
     </div>
   )

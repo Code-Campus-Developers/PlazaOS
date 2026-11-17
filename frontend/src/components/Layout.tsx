@@ -33,6 +33,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
     { label: 'Dashboard', to: '/admin/dashboard', icon: LayoutDashboard },
     { label: 'Units', to: '/admin/units', icon: Building2 },
     { label: 'Tenants', to: '/admin/tenants', icon: Users },
+    { label: 'Payments', to: '/admin/payments', icon: CreditCard },
     { label: 'Maintenance', to: '/admin/maintenance', icon: Wrench },
     { label: 'Announcements', to: '/admin/announcements', icon: Megaphone },
     { label: 'Reminders', to: '/admin/reminders', icon: Bell },

@@ -1,5 +1,4 @@
 import { api } from '../../../lib/api'
-import { mockTenants } from '../data/mockData'
 import type { AccountStatus, RentStatus, Tenant } from '../data/types'
 
 export type TenantSortField = 'name' | 'unitNumber' | 'leaseEnd' | 'rentStatus'
@@ -22,58 +21,10 @@ export interface GetTenantsResult {
   pageSize: number
 }
 
-function compareTenants(a: Tenant, b: Tenant, sortBy: TenantSortField): number {
-  switch (sortBy) {
-    case 'unitNumber':
-      return a.unitNumber.localeCompare(b.unitNumber, undefined, { numeric: true })
-    case 'leaseEnd':
-      return a.leaseEnd.localeCompare(b.leaseEnd)
-    case 'rentStatus':
-      return a.rentStatus.localeCompare(b.rentStatus)
-    case 'name':
-    default:
-      return a.name.localeCompare(b.name)
-  }
-}
-
-// Mirrors GET /tenants's own in-memory filter/sort/paginate logic — used only
-// as a DEV-mode fallback (see getTenants()) when the backend isn't reachable.
-function mockGetTenants(params: GetTenantsParams): GetTenantsResult {
-  const {
-    search = '',
-    rentStatus = 'all',
-    accountStatus = 'all',
-    sortBy = 'name',
-    sortDir = 'asc',
-    page = 1,
-    pageSize = 20,
-  } = params
-
-  let filtered = mockTenants
-  const query = search.trim().toLowerCase()
-  if (query) {
-    filtered = filtered.filter(
-      (tenant) => tenant.name.toLowerCase().includes(query) || tenant.email.toLowerCase().includes(query),
-    )
-  }
-  if (rentStatus !== 'all') filtered = filtered.filter((tenant) => tenant.rentStatus === rentStatus)
-  if (accountStatus !== 'all') filtered = filtered.filter((tenant) => tenant.accountStatus === accountStatus)
-
-  const sorted = [...filtered].sort((a, b) => {
-    const comparison = compareTenants(a, b, sortBy)
-    return sortDir === 'asc' ? comparison : -comparison
-  })
-
-  const total = sorted.length
-  const start = (page - 1) * pageSize
-  return { data: sorted.slice(start, start + pageSize), total, page, pageSize }
-}
-
 /**
  * The only function that reads/searches/filters/sorts/paginates the tenants
  * collection — every other file gets tenants through this. Calls
- * `GET /tenants?search=&rentStatus=&accountStatus=&sortBy=&sortDir=&page=&pageSize=`;
- * falls back to the mock dataset in dev if the backend isn't reachable.
+ * `GET /tenants?search=&rentStatus=&accountStatus=&sortBy=&sortDir=&page=&pageSize=`.
  */
 export async function getTenants(params: GetTenantsParams = {}): Promise<GetTenantsResult> {
   const {
@@ -94,24 +45,12 @@ export async function getTenants(params: GetTenantsParams = {}): Promise<GetTena
   query.set('page', String(page))
   query.set('pageSize', String(pageSize))
 
-  try {
-    return await api.get<GetTenantsResult>(`/tenants?${query.toString()}`)
-  } catch (err) {
-    if (!import.meta.env.DEV) throw err
-    return mockGetTenants(params)
-  }
+  return api.get<GetTenantsResult>(`/tenants?${query.toString()}`)
 }
 
 /** `GET /tenants/:tenantId`. */
-export async function evictTenant(tenantId: string, reason?: string): Promise<void> {
-  await api.post(`/tenants/${tenantId}/evict`, reason ? { reason } : {})
-}
-  try {
-    return await api.get<Tenant>(`/tenants/${tenantId}`)
-  } catch (err) {
-    if (!import.meta.env.DEV) throw err
-    return mockTenants.find((tenant) => tenant.id === tenantId)
-  }
+export async function getTenant(tenantId: string): Promise<Tenant> {
+  return api.get<Tenant>(`/tenants/${tenantId}`)
 }
 
 export interface AddTenantInput {
@@ -150,42 +89,28 @@ export async function addTenant(input: AddTenantInput): Promise<AddTenantResult>
   // `unitNumber` is a local-only field: the backend derives it from the
   // assigned unit and its schema rejects any extra field.
   const { unitNumber, ...body } = input
-  try {
-    const result = await api.post<{
-      success: boolean
-      id: string
-      invitation: InvitationResult
-    }>('/tenants', body)
-    return {
-      tenant: {
-        id: result.id,
-        name: input.name,
-        email: input.email,
-        phone: input.phone,
-        unitId: input.unitId,
-        unitNumber,
-        leaseStart: input.leaseStart,
-        leaseEnd: input.leaseEnd,
-        monthlyRent: input.monthlyRent,
-        rentStatus: 'due',
-        status: 'active',
-        accountStatus: 'pending',
-        mustChangePassword: true,
-      },
-      invitation: result.invitation,
-    }
-  } catch (err) {
-    if (!import.meta.env.DEV) throw err
-    const newTenant: Tenant = {
-      id: `tenant-${Date.now()}`,
-      ...input,
+  const result = await api.post<{
+    success: boolean
+    id: string
+    invitation: InvitationResult
+  }>('/tenants', body)
+  return {
+    tenant: {
+      id: result.id,
+      name: input.name,
+      email: input.email,
+      phone: input.phone,
+      unitId: input.unitId,
+      unitNumber,
+      leaseStart: input.leaseStart,
+      leaseEnd: input.leaseEnd,
+      monthlyRent: input.monthlyRent,
       rentStatus: 'due',
       status: 'active',
       accountStatus: 'pending',
       mustChangePassword: true,
-    }
-    mockTenants.push(newTenant)
-    return { tenant: newTenant, invitation: { delivered: true, status: 'sent' } }
+    },
+    invitation: result.invitation,
   }
 }
 
@@ -196,21 +121,14 @@ export async function addTenant(input: AddTenantInput): Promise<AddTenantResult>
 export interface UpdateTenantInput {
   leaseEnd?: string
   monthlyRent?: number
+  status?: 'active' | 'inactive'
   accountStatus?: AccountStatus
   mustChangePassword?: boolean
 }
 
 /** `PATCH /tenants/:tenantId`. */
 export async function updateTenant(tenantId: string, updates: UpdateTenantInput): Promise<Tenant | undefined> {
-  try {
-    return await api.patch<Tenant>(`/tenants/${tenantId}`, updates)
-  } catch (err) {
-    if (!import.meta.env.DEV) throw err
-    const tenant = mockTenants.find((existing) => existing.id === tenantId)
-    if (!tenant) return undefined
-    Object.assign(tenant, updates)
-    return tenant
-  }
+  return api.patch<Tenant>(`/tenants/${tenantId}`, updates)
 }
 
 export interface ResetPasswordResult {
@@ -225,20 +143,10 @@ export interface ResetPasswordResult {
  * invitation, so it also covers "resend invitation".
  */
 export async function resetTenantPassword(tenantId: string): Promise<ResetPasswordResult> {
-  try {
-    const result = await api.post<{
-      success: boolean
-      email: string
-      invitation: InvitationResult
-    }>(`/tenants/${tenantId}/reset-password`)
-    return { email: result.email, invitation: result.invitation }
-  } catch (err) {
-    if (!import.meta.env.DEV) throw err
-    const tenant = mockTenants.find((existing) => existing.id === tenantId)
-    if (!tenant) throw err
-    tenant.accountStatus = 'pending'
-    tenant.mustChangePassword = true
-    return { email: tenant.email, invitation: { delivered: true, status: 'sent' } }
-  }
+  const result = await api.post<{
+    success: boolean
+    email: string
+    invitation: InvitationResult
+  }>(`/tenants/${tenantId}/reset-password`)
+  return { email: result.email, invitation: result.invitation }
 }
-

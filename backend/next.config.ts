@@ -1,11 +1,10 @@
 import type { NextConfig } from "next";
-import path from "node:path";
 
 const nextConfig: NextConfig = {
   // Pin the workspace root explicitly — the frontend's package-lock.json one
   // directory up otherwise makes Next.js guess (and warn about) the wrong root.
   turbopack: {
-    root: path.join(__dirname),
+    root: process.cwd(),
   },
   async headers() {
     return [

@@ -9,7 +9,7 @@ const reminderSchema = new Schema(
     targetTenantIds: [{ type: Schema.Types.ObjectId, ref: 'User' }],
     targetLabel: { type: String, required: true },
     scheduledFor: { type: String, required: true },
-    status: { type: String, enum: ['scheduled', 'sent', 'failed'], required: true, default: 'scheduled' },
+    status: { type: String, enum: ['scheduled', 'sent', 'failed', 'cancelled'], required: true, default: 'scheduled' },
     // Set only for reminders auto-created from a due/overdue RentCharge (see
     // src/lib/auto-rent-reminders.ts) — the sparse unique index guarantees at
     // most one automatic reminder is ever created per rent charge, no matter

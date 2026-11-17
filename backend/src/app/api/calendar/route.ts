@@ -19,6 +19,7 @@ interface CalendarItem {
   type: 'rent_due' | 'lease_renewal' | 'reminder' | 'other'
   date: string
   relatedLabel?: string
+  tenantId?: string
 }
 
 // Plaza-wide equivalent of `GET /tenant/calendar`: rent-due and lease-renewal
@@ -66,6 +67,7 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
         type: 'rent_due' as const,
         date: doc.dueDate,
         relatedLabel: unitNumberById.get(doc.unitId.toString()),
+        tenantId: doc.tenantId.toString(),
       }
     }),
     ...leases.map((doc) => {
@@ -76,6 +78,7 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
         type: 'lease_renewal' as const,
         date: doc.endDate,
         relatedLabel: unitNumberById.get(doc.unitId.toString()),
+        tenantId: doc.tenantId.toString(),
       }
     }),
     ...reminders.map((doc) => ({
@@ -102,7 +105,7 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
 const createCalendarEventSchema = z
   .object({
     title: z.string().min(1),
-    type: z.enum(['rent_due', 'lease_renewal', 'reminder', 'meeting', 'inspection', 'eviction', 'other']),
+    type: z.literal('other'),
     date: z.string().min(1),
     relatedLabel: z.string().optional(),
   })

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Input, Text } from '../../../components'
 import { BackLink } from '../components/BackLink'
@@ -21,6 +22,7 @@ const OFFLINE_METHODS: { value: PaymentMethod; label: string }[] = [
 // POST /payments settles that specific charge.
 export function PaymentNew() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [tenantId, setTenantId] = useState('')
   const [rentCharges, setRentCharges] = useState<RentCharge[]>([])
@@ -31,25 +33,41 @@ export function PaymentNew() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [chargesError, setChargesError] = useState<string | null>(null)
+  const [tenantsError, setTenantsError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    getTenants({ pageSize: 1000 }).then((result) => {
-      if (cancelled) return
-      setTenants(result.data)
-      if (result.data[0]) setTenantId(result.data[0].id)
+    queryClient.fetchQuery({
+      queryKey: ['admin-reference-tenants'],
+      queryFn: async () => (await getTenants({ pageSize: 1000 })).data,
+      staleTime: 30_000,
+      retry: false,
     })
+      .then((result) => {
+        if (cancelled) return
+        setTenants(result)
+        if (result[0]) setTenantId(result[0].id)
+      })
+      .catch((error) => {
+        if (!cancelled) setTenantsError(error instanceof Error ? error.message : 'Unable to load tenants.')
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [queryClient])
 
   useEffect(() => {
     if (!tenantId) return
     let cancelled = false
     setRentChargeId('')
+    setRentCharges([])
     setChargesError(null)
-    getRentChargesForTenant(tenantId)
+    queryClient.fetchQuery({
+      queryKey: ['admin-rent-charges', tenantId],
+      queryFn: () => getRentChargesForTenant(tenantId),
+      staleTime: 30_000,
+      retry: false,
+    })
       .then((charges) => {
         if (cancelled) return
         setRentCharges(charges)
@@ -64,7 +82,7 @@ export function PaymentNew() {
     return () => {
       cancelled = true
     }
-  }, [tenantId])
+  }, [queryClient, tenantId])
 
   const selectedTenant = tenants.find((tenant) => tenant.id === tenantId)
   const selectedCharge = rentCharges.find((charge) => charge.id === rentChargeId)
@@ -85,6 +103,14 @@ export function PaymentNew() {
         method,
         note: note || undefined,
       })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'payments'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'tenants'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-reference-tenants'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-calendar'] }),
+      ])
+      void queryClient.invalidateQueries({ queryKey: ['admin-rent-charges', selectedTenant.id] })
       navigate('/admin/payments')
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to record the payment. Please try again.')
@@ -106,6 +132,7 @@ export function PaymentNew() {
             options={tenants.map((tenant) => ({ value: tenant.id, label: `${tenant.name} (${tenant.unitNumber})` }))}
             required
           />
+          {tenantsError ? <Text variant="bodySmall" className="text-danger">{tenantsError}</Text> : null}
           {chargesError ? <Text variant="bodySmall" className="text-danger">{chargesError}</Text> : null}
           {rentCharges.length > 0 ? (
             <Select
@@ -141,4 +168,3 @@ export function PaymentNew() {
     </div>
   )
 }
-

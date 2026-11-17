@@ -70,3 +70,17 @@ export const PATCH = withErrorHandling(async (request: NextRequest, { params }: 
 
   return NextResponse.json(toPublicRequest(doc))
 })
+
+export const DELETE = withErrorHandling(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  requireRole(request, 'admin')
+  const { id } = await params
+  await dbConnect()
+  const doc = await MaintenanceRequest.findById(id).catch(() => null)
+  if (!doc) throw new ApiError('Maintenance request not found', 404)
+  if (doc.status !== 'open') {
+    throw new ApiError('Only open maintenance requests can be deleted; keep in-progress and resolved requests as history', 409)
+  }
+
+  await doc.deleteOne()
+  return NextResponse.json({ success: true })
+})

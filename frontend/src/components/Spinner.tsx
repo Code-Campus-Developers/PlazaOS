@@ -1,5 +1,3 @@
-import { type CSSProperties } from 'react'
-
 interface SpinnerProps {
   label?: string
   size?: number

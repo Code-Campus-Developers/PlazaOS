@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Input } from '../../../components'
 import { BackLink } from '../components/BackLink'
@@ -16,15 +17,18 @@ const statusOptions: { value: UnitStatus; label: string }[] = [
 // Submits to POST /units — see addUnit() in ./data.ts.
 export function UnitNew() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [unitNumber, setUnitNumber] = useState('')
   const [floor, setFloor] = useState('')
   const [sizeSqft, setSizeSqft] = useState('')
   const [monthlyRent, setMonthlyRent] = useState('')
   const [status, setStatus] = useState<UnitStatus>('vacant')
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setSubmitError(null)
     setIsSubmitting(true)
     try {
       const newUnit = await addUnit({
@@ -34,7 +38,14 @@ export function UnitNew() {
         monthlyRent: Number(monthlyRent),
         status,
       })
+      queryClient.setQueryData(['admin-unit', newUnit.id], newUnit)
+      void queryClient.invalidateQueries({ queryKey: ['admin-page', 'units'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin-page', 'unit-floors'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin-reference-vacant-units'] })
+      void queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] })
       navigate(`/admin/units/${newUnit.id}`)
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to add this unit. Please try again.')
     } finally {
       setIsSubmitting(false)
     }
@@ -66,6 +77,7 @@ export function UnitNew() {
             required
           />
           <Select label="Status" value={status} onChange={(event) => setStatus(event.target.value as UnitStatus)} options={statusOptions} />
+          {submitError ? <p role="alert" className="text-[13px] text-danger">{submitError}</p> : null}
           <Button type="submit" disabled={isSubmitting} className="w-full">
             {isSubmitting ? 'Saving…' : 'Add unit'}
           </Button>

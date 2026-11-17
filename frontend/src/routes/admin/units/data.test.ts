@@ -1,81 +1,49 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { api } from '../../../lib/api'
 import { getAvailableFloors, getUnit, getUnits } from './data'
 
-describe('getUnits', () => {
-  it('returns all units with default params', async () => {
-    const result = await getUnits()
+vi.mock('../../../lib/api', () => ({
+  api: { get: vi.fn() },
+}))
 
-    expect(result.total).toBe(8)
-    expect(result.data).toHaveLength(8)
-    expect(result.page).toBe(1)
-    expect(result.pageSize).toBe(20)
+describe('admin unit data', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('requests filtered and paginated units from the API', async () => {
+    const response = { data: [], total: 0, page: 2, pageSize: 5 }
+    vi.mocked(api.get).mockResolvedValue(response)
+
+    await expect(
+      getUnits({ search: 'D-401', status: 'occupied', floor: '4', sortBy: 'monthlyRent', sortDir: 'desc', page: 2, pageSize: 5 }),
+    ).resolves.toEqual(response)
+
+    expect(api.get).toHaveBeenCalledWith(
+      '/units?search=D-401&status=occupied&floor=4&sortBy=monthlyRent&sortDir=desc&page=2&pageSize=5',
+    )
   })
 
-  it('filters by search, case-insensitively', async () => {
-    const result = await getUnits({ search: 'a-10' })
+  it('propagates API errors instead of substituting sample units', async () => {
+    const error = new Error('Backend unavailable')
+    vi.mocked(api.get).mockRejectedValue(error)
 
-    expect(result.data.map((unit) => unit.unitNumber)).toEqual(['A-101', 'A-102'])
-    expect(result.total).toBe(2)
-  })
-
-  it('filters by status', async () => {
-    const result = await getUnits({ status: 'vacant' })
-
-    expect(result.data).toHaveLength(1)
-    expect(result.data[0].unitNumber).toBe('C-302')
-  })
-
-  it('filters by floor', async () => {
-    const result = await getUnits({ floor: '2' })
-
-    expect(result.data.map((unit) => unit.unitNumber)).toEqual(['B-201', 'B-202', 'B-204'])
-  })
-
-  it('combines multiple filters', async () => {
-    const result = await getUnits({ floor: '2', status: 'occupied' })
-
-    expect(result.data.map((unit) => unit.unitNumber)).toEqual(['B-201', 'B-204'])
-  })
-
-  it('sorts by monthlyRent ascending by default direction', async () => {
-    const result = await getUnits({ sortBy: 'monthlyRent', sortDir: 'asc' })
-
-    const rents = result.data.map((unit) => unit.monthlyRent)
-    expect(rents).toEqual([...rents].sort((a, b) => a - b))
-  })
-
-  it('sorts descending when requested', async () => {
-    const result = await getUnits({ sortBy: 'monthlyRent', sortDir: 'desc' })
-
-    const rents = result.data.map((unit) => unit.monthlyRent)
-    expect(rents).toEqual([...rents].sort((a, b) => b - a))
-  })
-
-  it('paginates the filtered results', async () => {
-    const page1 = await getUnits({ sortBy: 'unitNumber', sortDir: 'asc', page: 1, pageSize: 3 })
-    const page2 = await getUnits({ sortBy: 'unitNumber', sortDir: 'asc', page: 2, pageSize: 3 })
-
-    expect(page1.data).toHaveLength(3)
-    expect(page2.data).toHaveLength(3)
-    expect(page1.total).toBe(8)
-    expect(page2.total).toBe(8)
-    expect(page1.data[0].unitNumber).not.toBe(page2.data[0].unitNumber)
+    await expect(getUnits()).rejects.toBe(error)
   })
 })
 
 describe('getAvailableFloors', () => {
-  it('returns distinct floors sorted numerically', async () => {
-    expect(await getAvailableFloors()).toEqual(['1', '2', '3'])
+  it('requests the distinct floor list from the API', async () => {
+    vi.mocked(api.get).mockResolvedValue(['2', '10'])
+    await expect(getAvailableFloors()).resolves.toEqual(['2', '10'])
+    expect(api.get).toHaveBeenCalledWith('/units/floors')
   })
 })
 
 describe('getUnit', () => {
-  it('returns the matching unit', async () => {
-    expect((await getUnit('unit-3'))?.unitNumber).toBe('B-201')
-  })
+  it('requests the unit by id from the API', async () => {
+    const unit = { id: 'unit-1', unitNumber: 'D-401' }
+    vi.mocked(api.get).mockResolvedValue(unit)
 
-  it('returns undefined for an unknown id', async () => {
-    expect(await getUnit('does-not-exist')).toBeUndefined()
+    await expect(getUnit('unit-1')).resolves.toEqual(unit)
+    expect(api.get).toHaveBeenCalledWith('/units/unit-1')
   })
 })
-

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { Button, Card, StatusBadge, Text } from '../../../components'
 import { BackLink } from '../components/BackLink'
@@ -31,17 +32,35 @@ const methodLabel: Record<PaymentMethod, string> = {
 
 // Fetches this payment from GET /payments/:paymentId.
 export function PaymentDetail() {
+  const queryClient = useQueryClient()
   const { paymentId } = useParams<{ paymentId: string }>()
   const [payment, setPayment] = useState<Payment | undefined>(undefined)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
 
   useEffect(() => {
     if (!paymentId) return
     let cancelled = false
-    setLoading(true)
-    getPayment(paymentId)
+    const queryKey = ['admin-payment', paymentId]
+    const cachedPayment = queryClient.getQueryData<Payment>(queryKey)
+    if (cachedPayment) {
+      setPayment(cachedPayment)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+    setLoadError(false)
+    queryClient.fetchQuery({
+      queryKey,
+      queryFn: () => getPayment(paymentId),
+      staleTime: 30_000,
+      retry: false,
+    })
       .then((found) => {
         if (!cancelled) setPayment(found)
+      })
+      .catch(() => {
+        if (!cancelled && !cachedPayment) setLoadError(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -49,7 +68,7 @@ export function PaymentDetail() {
     return () => {
       cancelled = true
     }
-  }, [paymentId])
+  }, [paymentId, queryClient])
 
   if (loading) {
     return (
@@ -60,11 +79,11 @@ export function PaymentDetail() {
     )
   }
 
-  if (!payment) {
+  if (loadError || !payment) {
     return (
       <div>
         <BackLink to="/admin/payments" label="Back to payments" />
-        <Text variant="body">Payment not found.</Text>
+        <Text variant="body">{loadError ? 'Unable to load this payment from the server.' : 'Payment not found.'}</Text>
       </div>
     )
   }

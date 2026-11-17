@@ -1,3 +1,5 @@
+import { useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useState } from 'react'
 import { Button, Input, StatusBadge, Table, Text } from '../../../components'
 import type { TableColumn } from '../../../components'
@@ -5,7 +7,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { useAsyncData } from '../components/useAsyncData'
 import type { Unit, UnitStatus } from '../data/types'
-import { getAvailableFloors, getUnits, deleteUnit, type GetUnitsResult, type SortDirection, type UnitSortField } from './data'
+import { deleteUnit, getAvailableFloors, getUnits, type GetUnitsResult, type SortDirection, type UnitSortField } from './data'
 import { formatNaira } from '../../../lib/formatNaira'
 
 const PAGE_SIZE = 20
@@ -44,40 +46,13 @@ const sortOptions: { value: UnitSortField; label: string }[] = [
 // already on screen, not the full collection, and wouldn't survive a
 // refresh). So columns here aren't marked sortable; sorting is driven by the
 // "Sort by" control below instead, which flows through getUnits() and the URL.
-const columns: TableColumn<Unit>[] = [
-  {
-    key: 'unitNumber',
-    header: 'Unit',
-    render: (unit) => (
-      <Link to={`/admin/units/${unit.id}`} className="font-medium text-primary hover:text-primary-light">
-        {unit.unitNumber}
-      </Link>
-    ),
-  },
-  { key: 'floor', header: 'Floor' },
-  { key: 'sizeSqft', header: 'Size', render: (unit) => `${unit.sizeSqft} sqft` },
-  { key: 'monthlyRent', header: 'Monthly rent', render: (unit) => formatNaira(unit.monthlyRent) },
-  { key: 'tenantName', header: 'Tenant', render: (unit) => unit.tenantName ?? '—' },
-  {
-    key: 'status',
-    header: 'Status',
-    render: (unit) => <StatusBadge variant={statusVariant[unit.status]} label={statusLabel[unit.status]} />,
-  },
-  {
-    key: 'actions',
-    header: 'Actions',
-    render: (unit) => (
-      <Button variant="danger" onClick={() => handleDelete(unit)} disabled={deletingId === unit.id}>
-        {deletingId === unit.id ? 'Deleting…' : 'Delete'}
-      </Button>
-    ),
-  },
-]
-
 // Fetches units from GET /units (see getUnits() in ./data.ts).
 export function UnitsList() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteError, setDeleteError] = useState(false)
 
   const search = searchParams.get('search') ?? ''
   const status = (searchParams.get('status') as 'all' | UnitStatus | null) ?? 'all'
@@ -86,25 +61,14 @@ export function UnitsList() {
   const sortDir = (searchParams.get('sortDir') as SortDirection | null) ?? 'asc'
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
 
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const handleDelete = async (unit: Unit) => {
-    if (!window.confirm(`Delete unit ${unit.unitNumber}?`)) return
-    setDeletingId(unit.id)
-    try {
-      await deleteUnit(unit.id)
-      window.location.reload()
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Delete failed')
-    } finally {
-      setDeletingId(null)
-    }
-  }
+  const { data: result, error, loading, retry } = useAsyncData<GetUnitsResult>(
     () => getUnits({ search, status, floor, sortBy, sortDir, page, pageSize: PAGE_SIZE }),
     [search, status, floor, sortBy, sortDir, page],
     { data: [], total: 0, page, pageSize: PAGE_SIZE },
+    'units',
   )
   const { data, total, pageSize } = result
-  const { data: floors } = useAsyncData<string[]>(() => getAvailableFloors(), [], [])
+  const { data: floors, error: floorsError, retry: retryFloors } = useAsyncData<string[]>(() => getAvailableFloors(), [], [], 'unit-floors')
   const floorOptions = [{ value: 'all', label: 'All floors' }, ...floors.map((f) => ({ value: f, label: `Floor ${f}` }))]
 
   // Any filter/sort change goes back to page 1; page navigation is handled separately below.
@@ -130,6 +94,66 @@ export function UnitsList() {
     }
     setSearchParams(next, { replace: true })
   }
+
+  async function handleDelete(unit: Unit) {
+    if (!window.confirm(`Delete vacant unit ${unit.unitNumber}? Units with tenant or history records cannot be deleted.`)) return
+    setDeletingId(unit.id)
+    setDeleteError(false)
+    try {
+      await deleteUnit(unit.id)
+      if (data.length === 1 && page > 1) goToPage(page - 1)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'units'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'unit-floors'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] }),
+      ])
+    } catch {
+      setDeleteError(true)
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const columns: TableColumn<Unit>[] = [
+    {
+      key: 'unitNumber',
+      header: 'Unit',
+      render: (unit) => (
+        <Link
+          to={`/admin/units/${unit.id}`}
+          className="font-medium text-primary hover:text-primary-light"
+          onClick={() => queryClient.setQueryData(['admin-unit', unit.id], unit)}
+        >
+          {unit.unitNumber}
+        </Link>
+      ),
+    },
+    { key: 'floor', header: 'Floor' },
+    { key: 'sizeSqft', header: 'Size', render: (unit) => `${unit.sizeSqft} sqft` },
+    { key: 'monthlyRent', header: 'Monthly rent', render: (unit) => formatNaira(unit.monthlyRent) },
+    { key: 'tenantName', header: 'Tenant', render: (unit) => unit.tenantName ?? '—' },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (unit) => <StatusBadge variant={statusVariant[unit.status]} label={statusLabel[unit.status]} />,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (unit) => (
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          disabled={deletingId !== null || unit.status !== 'vacant' || Boolean(unit.tenantId)}
+          title={unit.status !== 'vacant' || unit.tenantId ? 'Only vacant, unassigned units can be deleted' : 'Delete unit'}
+          onClick={() => handleDelete(unit)}
+        >
+          {deletingId === unit.id ? 'Deleting…' : 'Delete'}
+        </Button>
+      ),
+    },
+  ]
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
@@ -184,7 +208,23 @@ export function UnitsList() {
         </Button>
       </div>
 
-      <Table columns={columns} data={data} getRowKey={(unit) => unit.id} emptyMessage="No units match these filters" />
+      {error ? (
+        <div className="flex items-center justify-between rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <Text variant="bodySmall" className="text-danger">Unable to load units from the server.</Text>
+          <Button variant="secondary" onClick={retry}>Retry</Button>
+        </div>
+      ) : loading ? (
+        <Text variant="body">Loading units…</Text>
+      ) : (
+        <Table columns={columns} data={data} getRowKey={(unit) => unit.id} emptyMessage="No units match these filters" />
+      )}
+      {deleteError ? <p role="alert" className="mt-3 text-[13px] text-danger">Unable to delete that unit. It may have linked tenant or historical records.</p> : null}
+      {floorsError ? (
+        <div role="alert" className="mt-3 flex items-center justify-between rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <Text variant="bodySmall" className="text-danger">Unable to load floor options.</Text>
+          <Button variant="secondary" onClick={retryFloors}>Retry floors</Button>
+        </div>
+      ) : null}
 
       <div className="mt-4 flex items-center justify-between">
         <Text variant="bodySmall" className="text-slate-500">

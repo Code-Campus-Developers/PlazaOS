@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button, Input, StatusBadge, Table, Text } from '../../../components'
 import type { TableColumn } from '../../../components'
 import { PageHeader } from '../components/PageHeader'
@@ -81,6 +83,7 @@ const columns: TableColumn<Payment>[] = [
 // Fetches payments from GET /payments (see getPayments() in ./data.ts).
 export function PaymentsList() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
 
   const search = searchParams.get('search') ?? ''
@@ -90,12 +93,19 @@ export function PaymentsList() {
   const sortDir = (searchParams.get('sortDir') as SortDirection | null) ?? 'asc'
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
 
-  const { data: result } = useAsyncData<GetPaymentsResult>(
+  const { data: result, error, loading, retry } = useAsyncData<GetPaymentsResult>(
     () => getPayments({ search, status, method, sortBy, sortDir, page, pageSize: PAGE_SIZE }),
     [search, status, method, sortBy, sortDir, page],
     { data: [], total: 0, page, pageSize: PAGE_SIZE },
+    'payments',
   )
   const { data, total, pageSize } = result
+
+  useEffect(() => {
+    for (const payment of data) {
+      queryClient.setQueryData(['admin-payment', payment.id], payment)
+    }
+  }, [data, queryClient])
 
   // Any filter/sort change goes back to page 1; page navigation is handled separately below.
   function updateParams(patch: Record<string, string | null>) {
@@ -171,7 +181,16 @@ export function PaymentsList() {
         </Button>
       </div>
 
-      <Table columns={columns} data={data} getRowKey={(payment) => payment.id} emptyMessage="No payments match these filters" />
+      {error ? (
+        <div className="flex items-center justify-between rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <Text variant="bodySmall" className="text-danger">Unable to load payments from the server.</Text>
+          <Button variant="secondary" onClick={retry}>Retry</Button>
+        </div>
+      ) : loading ? (
+        <Text variant="body">Loading payments…</Text>
+      ) : (
+        <Table columns={columns} data={data} getRowKey={(payment) => payment.id} emptyMessage="No payments match these filters" />
+      )}
 
       <div className="mt-4 flex items-center justify-between">
         <Text variant="bodySmall" className="text-slate-500">

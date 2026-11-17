@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Button, Card, Input, Modal, Select, Table, Text, StatusBadge } from '../../components'
+import { Button, Card, Input, Select, Table, Text, StatusBadge } from '../../components'
 import type { TableColumn } from '../../components'
 import type { StatusVariant } from '../../components/StatusBadge'
 import { usePayments } from '../../hooks/usePayments'
 import { DEFAULT_PAGE_SIZE, paymentService, type Payment, type PaymentStatus } from '../../lib/services/paymentService'
-import { formatNaira } from '../../lib/formatNaira'
 
 const statusVariantMap: Record<PaymentStatus, StatusVariant> = {
   paid: 'success',
@@ -22,7 +21,6 @@ export function Payments() {
 
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
-  const [selected, setSelected] = useState<Payment | null>(null)
 
   // Paystack redirects back here with `?reference=...&trxref=...` — re-check the
   // real outcome rather than assuming success just because the browser returned.
@@ -57,8 +55,8 @@ export function Payments() {
       header: '',
       render: (row) => (
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={() => setSelected(row)}>
-            View
+          <Button variant="secondary" onClick={() => navigate(`/tenant/payments/${row.id}`)}>
+            Details
           </Button>
           {row.receiptUrl ? (
             <a href={row.receiptUrl} target="_blank" rel="noreferrer" className="text-primary">
@@ -125,23 +123,6 @@ export function Payments() {
           />
         )}
 
-        {/* Details modal */}
-        <Modal isOpen={!!selected} onClose={() => setSelected(null)} title="Payment details">
-          {selected ? (
-            <div className="flex flex-col gap-3">
-              <Text variant="body">Date: {selected.date}</Text>
-              <Text variant="body">Amount: {formatNaira(selected.amount)}</Text>
-              <Text variant="body">Status: {selected.status}</Text>
-              {selected.receiptUrl ? (
-                <a href={selected.receiptUrl} target="_blank" rel="noreferrer" className="text-primary">
-                  Download receipt
-                </a>
-              ) : (
-                <Text variant="bodySmall">Receipt unavailable</Text>
-              )}
-            </div>
-          ) : null}
-        </Modal>
         <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>

@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { Button, Card, Input, Text } from '../../../components'
 import { BackLink } from '../components/BackLink'
@@ -19,10 +20,13 @@ interface CreatedTenant {
 // creates the tenant, assigns the unit, and creates the lease atomically, so
 // no separate updateUnit() call is needed here.
 export function TenantNew() {
+  const queryClient = useQueryClient()
   // Large pageSize so this dropdown always has every vacant unit, not just
   // page 1 — this is a UI convenience read, not the paginated list view.
   const [vacantUnits, setVacantUnits] = useState<Unit[]>([])
   const [unitsLoaded, setUnitsLoaded] = useState(false)
+  const [unitsLoadError, setUnitsLoadError] = useState<string | null>(null)
+  const [unitLoadAttempt, setUnitLoadAttempt] = useState(0)
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -37,19 +41,32 @@ export function TenantNew() {
 
   useEffect(() => {
     let cancelled = false
-    getUnits({ status: 'vacant', pageSize: 1000 }).then((result) => {
-      if (cancelled) return
-      setVacantUnits(result.data)
-      setUnitsLoaded(true)
-      if (result.data[0]) {
-        setSelectedUnitId(result.data[0].id)
-        setMonthlyRent(String(result.data[0].monthlyRent))
-      }
+    queryClient.fetchQuery({
+      queryKey: ['admin-reference-vacant-units'],
+      queryFn: async () => (await getUnits({ status: 'vacant', pageSize: 1000 })).data,
+      staleTime: 30_000,
+      retry: false,
     })
+      .then((units) => {
+        if (cancelled) return
+        setVacantUnits(units)
+        if (units[0]) {
+          setSelectedUnitId(units[0].id)
+          setMonthlyRent(String(units[0].monthlyRent))
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setUnitsLoadError(error instanceof Error ? error.message : 'Unable to load vacant units.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setUnitsLoaded(true)
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [queryClient, unitLoadAttempt])
 
   function handleUnitChange(unitId: string) {
     setSelectedUnitId(unitId)
@@ -77,6 +94,17 @@ export function TenantNew() {
         leaseEnd,
         monthlyRent: Number(monthlyRent),
       })
+      queryClient.setQueryData(['admin-tenant', result.tenant.id], result.tenant)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'tenants'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'units'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-reference-vacant-units'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-reference-tenants'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'unit-floors'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'calendar'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-calendar'] }),
+      ])
       setCreated(result)
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to create the tenant. Please try again.')
@@ -103,7 +131,7 @@ export function TenantNew() {
     )
   }
 
-  if (unitsLoaded && vacantUnits.length === 0) {
+  if (unitsLoaded && !unitsLoadError && vacantUnits.length === 0) {
     return (
       <div>
         <BackLink to="/admin/tenants" label="Back to tenants" />
@@ -126,6 +154,23 @@ export function TenantNew() {
       <PageHeader title="Add tenant" description="Create a tenant account and assign them to a vacant unit." />
       <Card className="max-w-lg">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          {!unitsLoaded ? <Text variant="bodySmall" className="text-slate-500">Loading vacant units…</Text> : null}
+          {unitsLoadError ? (
+            <div className="flex items-center justify-between gap-3">
+              <Text variant="bodySmall" className="text-danger">{unitsLoadError}</Text>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setUnitsLoaded(false)
+                  setUnitsLoadError(null)
+                  setUnitLoadAttempt((attempt) => attempt + 1)
+                }}
+              >
+                Retry
+              </Button>
+            </div>
+          ) : null}
           <Input label="Name" value={name} onChange={(event) => setName(event.target.value)} required />
           <Input label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
           <Input label="Phone" value={phone} onChange={(event) => setPhone(event.target.value)} required />
@@ -148,7 +193,7 @@ export function TenantNew() {
             required
           />
           {submitError ? <Text variant="bodySmall" className="text-danger">{submitError}</Text> : null}
-          <Button type="submit" disabled={isSubmitting} className="w-full">
+          <Button type="submit" disabled={isSubmitting || !unitsLoaded || Boolean(unitsLoadError) || !selectedUnitId} className="w-full">
             {isSubmitting ? 'Creating…' : 'Create tenant'}
           </Button>
         </form>

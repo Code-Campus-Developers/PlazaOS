@@ -1,12 +1,13 @@
-import { useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button, Input, StatusBadge, Table, Text } from '../../../components'
 import type { TableColumn } from '../../../components'
 import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { useAsyncData } from '../components/useAsyncData'
 import type { AccountStatus, RentStatus, Tenant } from '../data/types'
-import { getTenants, evictTenant, type GetTenantsResult, type SortDirection, type TenantSortField } from './data'
+import { getTenants, type GetTenantsResult, type SortDirection, type TenantSortField, updateTenant } from './data'
 
 const PAGE_SIZE = 20
 
@@ -58,60 +59,13 @@ const sortOptions: { value: TenantSortField; label: string }[] = [
 // client-side with fully internal state, so it's only correct for one page
 // of rows. Columns aren't marked sortable; the "Sort by" control below
 // drives getTenants() and the URL instead.
-const columns: TableColumn<Tenant>[] = [
-  {
-    key: 'name',
-    header: 'Tenant',
-    render: (tenant) => (
-      <Link to={`/admin/tenants/${tenant.id}`} className="font-medium text-primary hover:text-primary-light">
-        {tenant.name}
-      </Link>
-    ),
-  },
-  { key: 'unitNumber', header: 'Unit' },
-  { key: 'email', header: 'Email' },
-  { key: 'leaseEnd', header: 'Lease ends' },
-  {
-    key: 'rentStatus',
-    header: 'Rent status',
-    render: (tenant) => <StatusBadge variant={rentStatusVariant[tenant.rentStatus]} label={rentStatusLabel[tenant.rentStatus]} />,
-  },
-  {
-    key: 'accountStatus',
-    header: 'Account',
-    render: (tenant) => (
-      <StatusBadge variant={accountStatusVariant[tenant.accountStatus]} label={accountStatusLabel[tenant.accountStatus]} />
-    ),
-  },
-  {
-    key: 'actions',
-    header: 'Actions',
-    render: (tenant) => (
-      <Button variant="danger" onClick={() => handleDelete(tenant)} disabled={deletingId === tenant.id}>
-        {deletingId === tenant.id ? 'Evicting…' : 'Evict'}
-      </Button>
-    ),
-  },
-]
-
 // Fetches tenants from GET /tenants (see getTenants() in ./data.ts).
 export function TenantsList() {
   const navigate = useNavigate()
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const handleDelete = async (tenant: Tenant) => {
-    if (!window.confirm(`Evict tenant ${tenant.name}? This preserves their history.`)) return
-    const reason = window.prompt('Eviction reason (optional):') ?? undefined
-    setDeletingId(tenant.id)
-    try {
-      await evictTenant(tenant.id, reason || undefined)
-      window.location.reload()
-    } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Eviction failed')
-    } finally {
-      setDeletingId(null)
-    }
-  }
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [updatingTenantId, setUpdatingTenantId] = useState<string | null>(null)
+  const [statusError, setStatusError] = useState(false)
 
   const search = searchParams.get('search') ?? ''
   const rentStatus = (searchParams.get('rentStatus') as 'all' | RentStatus | null) ?? 'all'
@@ -120,12 +74,19 @@ export function TenantsList() {
   const sortDir = (searchParams.get('sortDir') as SortDirection | null) ?? 'asc'
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
 
-  const { data: result } = useAsyncData<GetTenantsResult>(
+  const { data: result, error, loading, retry } = useAsyncData<GetTenantsResult>(
     () => getTenants({ search, rentStatus, accountStatus, sortBy, sortDir, page, pageSize: PAGE_SIZE }),
     [search, rentStatus, accountStatus, sortBy, sortDir, page],
     { data: [], total: 0, page, pageSize: PAGE_SIZE },
+    'tenants',
   )
   const { data, total, pageSize } = result
+
+  useEffect(() => {
+    for (const tenant of data) {
+      queryClient.setQueryData(['admin-tenant', tenant.id], tenant)
+    }
+  }, [data, queryClient])
 
   // Any filter/sort change goes back to page 1; page navigation is handled separately below.
   function updateParams(patch: Record<string, string | null>) {
@@ -150,6 +111,73 @@ export function TenantsList() {
     }
     setSearchParams(next, { replace: true })
   }
+
+  async function handleToggleStatus(tenant: Tenant) {
+    const nextStatus = tenant.status === 'active' ? 'inactive' : 'active'
+    if (!window.confirm(`${nextStatus === 'inactive' ? 'Deactivate' : 'Reactivate'} ${tenant.name}? Their account and payment history will be kept.`)) return
+    setUpdatingTenantId(tenant.id)
+    setStatusError(false)
+    try {
+      await updateTenant(tenant.id, { status: nextStatus })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'tenants'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] }),
+      ])
+    } catch {
+      setStatusError(true)
+    } finally {
+      setUpdatingTenantId(null)
+    }
+  }
+
+  const columns: TableColumn<Tenant>[] = [
+    {
+      key: 'name',
+      header: 'Tenant',
+      render: (tenant) => (
+        <Link to={`/admin/tenants/${tenant.id}`} className="font-medium text-primary hover:text-primary-light">
+          {tenant.name}
+        </Link>
+      ),
+    },
+    { key: 'unitNumber', header: 'Unit' },
+    { key: 'email', header: 'Email' },
+    { key: 'leaseEnd', header: 'Lease ends' },
+    {
+      key: 'rentStatus',
+      header: 'Rent status',
+      render: (tenant) => <StatusBadge variant={rentStatusVariant[tenant.rentStatus]} label={rentStatusLabel[tenant.rentStatus]} />,
+    },
+    {
+      key: 'accountStatus',
+      header: 'Account',
+      render: (tenant) => (
+        <StatusBadge variant={accountStatusVariant[tenant.accountStatus]} label={accountStatusLabel[tenant.accountStatus]} />
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Tenant status',
+      render: (tenant) => (
+        <StatusBadge variant={tenant.status === 'active' ? 'success' : 'neutral'} label={tenant.status === 'active' ? 'Active' : 'Inactive'} />
+      ),
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (tenant) => (
+        <Button
+          type="button"
+          size="sm"
+          variant={tenant.status === 'active' ? 'destructive' : 'secondary'}
+          onClick={() => handleToggleStatus(tenant)}
+          disabled={updatingTenantId !== null}
+        >
+          {updatingTenantId === tenant.id ? 'Updating…' : tenant.status === 'active' ? 'Deactivate' : 'Reactivate'}
+        </Button>
+      ),
+    },
+  ]
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
@@ -201,7 +229,17 @@ export function TenantsList() {
         </Button>
       </div>
 
-      <Table columns={columns} data={data} getRowKey={(tenant) => tenant.id} emptyMessage="No tenants match these filters" />
+      {error ? (
+        <div className="flex items-center justify-between rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <Text variant="bodySmall" className="text-danger">Unable to load tenants from the server.</Text>
+          <Button variant="secondary" onClick={retry}>Retry</Button>
+        </div>
+      ) : loading ? (
+        <Text variant="body">Loading tenants…</Text>
+      ) : (
+        <Table columns={columns} data={data} getRowKey={(tenant) => tenant.id} emptyMessage="No tenants match these filters" />
+      )}
+      {statusError ? <p role="alert" className="mt-3 text-[13px] text-danger">Unable to update tenant status. Please try again.</p> : null}
 
       <div className="mt-4 flex items-center justify-between">
         <Text variant="bodySmall" className="text-slate-500">

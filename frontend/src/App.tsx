@@ -33,8 +33,10 @@ import { TenantSetupGuard } from './routes/tenant/TenantSetupGuard'
 import { TenantHome } from './routes/tenant/TenantHome'
 import { Profile } from './routes/tenant/Profile'
 import { Payments } from './routes/tenant/Payments'
+import { PaymentDetail as TenantPaymentDetail } from './routes/tenant/PaymentDetail'
 import { PaymentsNew } from './routes/tenant/PaymentsNew'
 import { Maintenance } from './routes/tenant/Maintenance'
+import { MaintenanceDetail as TenantMaintenanceDetail } from './routes/tenant/MaintenanceDetail'
 import { MaintenanceNew } from './routes/tenant/MaintenanceNew'
 import { Announcements } from './routes/tenant/Announcements'
 import { Notifications } from './routes/tenant/Notifications'
@@ -127,8 +129,10 @@ function AppRoutes() {
         <Route path="profile" element={<Profile />} />
         <Route path="payments" element={<Payments />} />
         <Route path="payments/new" element={<PaymentsNew />} />
+        <Route path="payments/:paymentId" element={<TenantPaymentDetail />} />
         <Route path="maintenance" element={<Maintenance />} />
         <Route path="maintenance/new" element={<MaintenanceNew />} />
+        <Route path="maintenance/:requestId" element={<TenantMaintenanceDetail />} />
         <Route path="announcements" element={<Announcements />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="calendar" element={<Calendar />} />

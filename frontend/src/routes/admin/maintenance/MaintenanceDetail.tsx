@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button, Card, Input, StatusBadge, Text } from '../../../components'
 import { BackLink } from '../components/BackLink'
 import { DetailField } from '../components/DetailField'
@@ -7,7 +8,7 @@ import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { Textarea } from '../components/Textarea'
 import type { MaintenancePriority, MaintenanceRequest, MaintenanceStatus } from '../data/types'
-import { getMaintenanceRequest, updateMaintenanceRequest } from './data'
+import { deleteMaintenanceRequest, getMaintenanceRequest, updateMaintenanceRequest } from './data'
 
 const statusLabel: Record<MaintenanceStatus, string> = {
   open: 'Open',
@@ -42,6 +43,8 @@ const priorityOptions: { value: MaintenancePriority; label: string }[] = [
 // Fetches this request from GET /maintenance/:requestId and saves via PATCH
 // — see getMaintenanceRequest()/updateMaintenanceRequest() in ./data.ts.
 export function MaintenanceDetail() {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const { requestId } = useParams<{ requestId: string }>()
   const [request, setRequest] = useState<MaintenanceRequest | undefined>(undefined)
   const [loading, setLoading] = useState(true)
@@ -50,12 +53,33 @@ export function MaintenanceDetail() {
   const [notes, setNotes] = useState('')
   const [resolvedAt, setResolvedAt] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [loadError, setLoadError] = useState(false)
+  const [saveError, setSaveError] = useState(false)
+  const [deleteError, setDeleteError] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   useEffect(() => {
     if (!requestId) return
     let cancelled = false
-    setLoading(true)
-    getMaintenanceRequest(requestId)
+    const queryKey = ['admin-maintenance-request', requestId]
+    const cachedRequest = queryClient.getQueryData<MaintenanceRequest>(queryKey)
+    if (cachedRequest) {
+      setRequest(cachedRequest)
+      setStatus(cachedRequest.status)
+      setPriority(cachedRequest.priority)
+      setNotes(cachedRequest.notes ?? '')
+      setResolvedAt(cachedRequest.resolvedAt ?? null)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+    setLoadError(false)
+    queryClient.fetchQuery({
+      queryKey,
+      queryFn: () => getMaintenanceRequest(requestId),
+      staleTime: 30_000,
+      retry: false,
+    })
       .then((found) => {
         if (cancelled) return
         setRequest(found)
@@ -66,13 +90,16 @@ export function MaintenanceDetail() {
           setResolvedAt(found.resolvedAt ?? null)
         }
       })
+      .catch(() => {
+        if (!cancelled && !cachedRequest) setLoadError(true)
+      })
       .finally(() => {
         if (!cancelled) setLoading(false)
       })
     return () => {
       cancelled = true
     }
-  }, [requestId])
+  }, [queryClient, requestId])
 
   if (loading) {
     return (
@@ -83,11 +110,11 @@ export function MaintenanceDetail() {
     )
   }
 
-  if (!request) {
+  if (loadError || !request) {
     return (
       <div>
         <BackLink to="/admin/maintenance" label="Back to maintenance" />
-        <Text variant="body">Maintenance request not found.</Text>
+        <Text variant="body">{loadError ? 'Unable to load this maintenance request from the server.' : 'Maintenance request not found.'}</Text>
       </div>
     )
   }
@@ -109,6 +136,7 @@ export function MaintenanceDetail() {
 
   async function handleSave() {
     setIsSaving(true)
+    setSaveError(false)
     try {
       const updated = await updateMaintenanceRequest(currentRequest.id, {
         status,
@@ -116,9 +144,36 @@ export function MaintenanceDetail() {
         notes,
         resolvedAt: status === 'resolved' ? resolvedAt : null,
       })
-      if (updated) setRequest(updated)
+      if (updated) {
+        setRequest(updated)
+        queryClient.setQueryData(['admin-maintenance-request', currentRequest.id], updated)
+        void queryClient.invalidateQueries({ queryKey: ['admin-page', 'maintenance'] })
+        void queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] })
+      }
+    } catch {
+      setSaveError(true)
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete the open request “${currentRequest.title}”? Requests that are in progress or resolved are retained as history.`)) {
+      return
+    }
+    setIsDeleting(true)
+    setDeleteError(false)
+    try {
+      await deleteMaintenanceRequest(currentRequest.id)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'maintenance'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-summary'] }),
+      ])
+      navigate('/admin/maintenance')
+    } catch {
+      setDeleteError(true)
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -127,8 +182,18 @@ export function MaintenanceDetail() {
       <BackLink to="/admin/maintenance" label="Back to maintenance" />
       <PageHeader
         title={currentRequest.title}
-        action={<StatusBadge variant={statusVariant[currentRequest.status]} label={statusLabel[currentRequest.status]} />}
+        action={
+          <div className="flex flex-wrap items-center gap-3">
+            <StatusBadge variant={statusVariant[currentRequest.status]} label={statusLabel[currentRequest.status]} />
+            {currentRequest.status === 'open' ? (
+              <Button type="button" variant="destructive" onClick={handleDelete} disabled={isDeleting || isSaving}>
+                {isDeleting ? 'Deleting…' : 'Delete open request'}
+              </Button>
+            ) : null}
+          </div>
+        }
       />
+      {deleteError ? <p role="alert" className="mb-4 text-[13px] text-danger">Unable to delete this request. Only open requests can be removed.</p> : null}
 
       <Card className="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2">
         <DetailField label="Tenant">
@@ -200,6 +265,7 @@ export function MaintenanceDetail() {
           <Button onClick={handleSave} disabled={isSaving || !hasChanges}>
             {isSaving ? 'Saving…' : 'Save changes'}
           </Button>
+          {saveError ? <p role="alert" className="text-[13px] text-danger">Unable to save request changes. Please try again.</p> : null}
         </div>
       </Card>
     </div>

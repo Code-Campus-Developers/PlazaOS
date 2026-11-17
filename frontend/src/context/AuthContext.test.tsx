@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactNode } from 'react'
 import { AuthProvider } from './AuthProvider'
@@ -45,25 +45,13 @@ describe('AuthContext', () => {
     expect(localStorage.getItem('plaza_os_token')).toBe('tok-123')
   })
 
-  it('falls back to the dev mock account when the API is unreachable', async () => {
-    mockedPost.mockRejectedValueOnce(new TypeError('Failed to fetch'))
-    const { result } = renderHook(() => useAuth(), { wrapper })
-
-    await act(async () => {
-      await result.current.login('tenant@plaza.test', 'password123')
-    })
-
-    await waitFor(() => expect(result.current.isAuthenticated).toBe(true))
-    expect(result.current.role).toBe('tenant')
-  })
-
-  it('rethrows the original error when mock fallback credentials do not match', async () => {
+  it('propagates login errors when the API is unreachable', async () => {
     mockedPost.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     const { result } = renderHook(() => useAuth(), { wrapper })
 
     await expect(
       act(async () => {
-        await result.current.login('unknown@plaza.test', 'wrong-password')
+        await result.current.login('tenant@plaza.test', 'password123')
       }),
     ).rejects.toThrow('Failed to fetch')
 

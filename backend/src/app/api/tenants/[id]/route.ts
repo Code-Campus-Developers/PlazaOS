@@ -85,6 +85,7 @@ const updateTenantSchema = z
   .object({
     leaseEnd: z.string().min(1).optional(),
     monthlyRent: z.number().positive().optional(),
+    status: z.enum(['active', 'inactive']).optional(),
     accountStatus: z.enum(['temporary', 'active']).optional(),
     mustChangePassword: z.boolean().optional(),
   })
@@ -117,6 +118,7 @@ export const PATCH = withErrorHandling(async (request: NextRequest, { params }: 
     }
     found.user.accountStatus = parsed.data.accountStatus
   }
+  if (parsed.data.status !== undefined) found.user.status = parsed.data.status
   if (parsed.data.mustChangePassword !== undefined) found.user.mustChangePassword = parsed.data.mustChangePassword
   await found.user.save()
 

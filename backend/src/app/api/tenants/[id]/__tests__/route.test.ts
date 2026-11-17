@@ -89,4 +89,16 @@ describe('PATCH /tenants/:id', () => {
     expect(response.status).toBe(200)
     expect(user.accountStatus).toBe('temporary')
   })
+
+  it('deactivates a tenant without deleting their linked account or history', async () => {
+    const user = { _id: 'tenant-1', role: 'tenant', status: 'active', passwordHash: 'hash', save: vi.fn().mockResolvedValue(undefined) }
+    vi.mocked(User.findOne).mockResolvedValue(user as never)
+    vi.mocked(Lease.findOne).mockReturnValue({ sort: vi.fn().mockResolvedValue(null) } as never)
+
+    const response = await PATCH(adminRequest({ status: 'inactive' }), { params: Promise.resolve({ id: 'tenant-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(user.status).toBe('inactive')
+    expect(user.save).toHaveBeenCalledOnce()
+  })
 })

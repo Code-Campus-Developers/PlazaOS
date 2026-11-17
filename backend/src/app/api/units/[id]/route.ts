@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { dbConnect } from '@/lib/db'
 import { Unit } from '@/models/Unit'
+import { User } from '@/models/User'
+import { Lease } from '@/models/Lease'
+import { RentCharge } from '@/models/RentCharge'
+import { Payment } from '@/models/Payment'
+import { MaintenanceRequest } from '@/models/MaintenanceRequest'
 import { ApiError } from '@/lib/api-error'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
 
@@ -41,6 +46,38 @@ export const GET = withErrorHandling(async (request: NextRequest, { params }: { 
   const doc = await Unit.findById(id).catch(() => null)
   if (!doc) throw new ApiError('Unit not found', 404)
   return NextResponse.json(toPublicUnit(doc))
+})
+
+export const DELETE = withErrorHandling(async (request: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
+  requireRole(request, 'admin')
+  const { id } = await params
+  await dbConnect()
+  const unit = await Unit.findById(id).catch(() => null)
+  if (!unit) throw new ApiError('Unit not found', 404)
+  if (unit.status !== 'vacant' || unit.tenantId) {
+    throw new ApiError('Only vacant, unassigned units can be deleted', 409)
+  }
+
+  const [tenantCount, leaseCount, rentChargeCount, paymentCount, maintenanceCount] = await Promise.all([
+    User.countDocuments({ role: 'tenant', unitId: unit._id }),
+    Lease.countDocuments({ unitId: unit._id }),
+    RentCharge.countDocuments({ unitId: unit._id }),
+    Payment.countDocuments({ unitId: unit._id }),
+    MaintenanceRequest.countDocuments({ unitId: unit._id }),
+  ])
+  if (tenantCount + leaseCount + rentChargeCount + paymentCount + maintenanceCount > 0) {
+    throw new ApiError('This unit has tenant or financial history and cannot be deleted', 409)
+  }
+
+  const deletion = await Unit.deleteOne({
+    _id: unit._id,
+    status: 'vacant',
+    tenantId: { $in: [null] },
+  })
+  if (deletion.deletedCount !== 1) {
+    throw new ApiError('This unit is no longer vacant and cannot be deleted', 409)
+  }
+  return NextResponse.json({ success: true })
 })
 
 // `tenantId`/`tenantName` may only be explicitly cleared (set to `null`) here —

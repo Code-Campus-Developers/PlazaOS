@@ -1,11 +1,14 @@
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, StatusBadge, Table, Text } from '../../../components'
 import type { TableColumn } from '../../../components'
 import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
 import { useAsyncData } from '../components/useAsyncData'
 import type { CalendarEvent, CalendarEventType } from '../data/types'
-import { getCalendarEvents, type GetCalendarEventsResult, type SortDirection } from './data'
+import { deleteCalendarEvent, getCalendarEvents, type GetCalendarEventsResult, type SortDirection } from './data'
+import { cancelReminder } from '../reminders/data'
 
 const PAGE_SIZE = 20
 
@@ -34,6 +37,7 @@ const typeOptions: { value: 'all' | CalendarEventType; label: string }[] = [
   { value: 'lease_renewal', label: 'Lease renewal' },
   { value: 'reminder', label: 'Reminder' },
   { value: 'rent_due', label: 'Rent due' },
+  { value: 'other', label: 'Other' },
 ]
 
 // NOTE: same reasoning as Units/Tenants/Maintenance — the shared Table
@@ -42,21 +46,13 @@ const typeOptions: { value: 'all' | CalendarEventType; label: string }[] = [
 // sort-direction control below drives getCalendarEvents() and the URL
 // instead. There's only one sortable field (date), so there's no separate
 // "Sort by" field picker here — just the direction toggle.
-const columns: TableColumn<CalendarEvent>[] = [
-  { key: 'date', header: 'Date' },
-  { key: 'title', header: 'Event' },
-  { key: 'relatedLabel', header: 'Related to', render: (event) => event.relatedLabel ?? '—' },
-  {
-    key: 'type',
-    header: 'Type',
-    render: (event) => <StatusBadge variant={typeVariant[event.type]} label={typeLabel[event.type]} />,
-  },
-]
-
 // Fetches events from GET /calendar (see getCalendarEvents() in ./data.ts).
 export function AdminCalendar() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
+  const [actingId, setActingId] = useState<string | null>(null)
+  const [actionError, setActionError] = useState(false)
 
   const search = searchParams.get('search') ?? ''
   const type = (searchParams.get('type') as 'all' | CalendarEventType | null) ?? 'all'
@@ -65,10 +61,11 @@ export function AdminCalendar() {
   const sortDir = (searchParams.get('sortDir') as SortDirection | null) ?? 'asc'
   const page = Math.max(1, Number(searchParams.get('page') ?? '1') || 1)
 
-  const { data: result } = useAsyncData<GetCalendarEventsResult>(
+  const { data: result, error, loading, retry } = useAsyncData<GetCalendarEventsResult>(
     () => getCalendarEvents({ search, type, dateFrom, dateTo, sortDir, page, pageSize: PAGE_SIZE }),
     [search, type, dateFrom, dateTo, sortDir, page],
     { data: [], total: 0, page, pageSize: PAGE_SIZE },
+    'calendar',
   )
   const { data, total, pageSize } = result
 
@@ -99,6 +96,93 @@ export function AdminCalendar() {
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1
   const rangeEnd = Math.min(page * pageSize, total)
+
+  async function handleDelete(event: CalendarEvent) {
+    if (!window.confirm(`Delete the calendar event “${event.title}”?`)) return
+    setActingId(event.id)
+    setActionError(false)
+    try {
+      await deleteCalendarEvent(event.id)
+      if (data.length === 1 && page > 1) goToPage(page - 1)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'calendar'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-calendar'] }),
+      ])
+    } catch {
+      setActionError(true)
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  async function handleCancelReminder(event: CalendarEvent) {
+    if (!window.confirm(`Cancel the scheduled reminder “${event.title}”? It will remain in reminder history.`)) return
+    setActingId(event.id)
+    setActionError(false)
+    try {
+      await cancelReminder(event.id.slice('reminder:'.length))
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'calendar'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'reminders'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-calendar'] }),
+      ])
+    } catch {
+      setActionError(true)
+    } finally {
+      setActingId(null)
+    }
+  }
+
+  const columns: TableColumn<CalendarEvent>[] = [
+    { key: 'date', header: 'Date' },
+    { key: 'title', header: 'Event' },
+    { key: 'relatedLabel', header: 'Related to', render: (event) => event.relatedLabel ?? '—' },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (event) => <StatusBadge variant={typeVariant[event.type]} label={typeLabel[event.type]} />,
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (event) => {
+        if (event.id.startsWith('reminder:')) {
+          return (
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={() => handleCancelReminder(event)}
+              disabled={actingId !== null}
+            >
+              {actingId === event.id ? 'Cancelling…' : 'Cancel'}
+            </Button>
+          )
+        }
+        if (event.id.startsWith('lease:') || event.id.startsWith('rent-charge:')) {
+          return event.tenantId ? (
+            <Link
+              to={`/admin/tenants/${event.tenantId}`}
+              className="inline-flex min-h-[36px] items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-[13px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              View tenant
+            </Link>
+          ) : null
+        }
+        return (
+          <Button
+            type="button"
+            size="sm"
+            variant="destructive"
+            onClick={() => handleDelete(event)}
+            disabled={actingId !== null}
+          >
+            {actingId === event.id ? 'Deleting…' : 'Delete'}
+          </Button>
+        )
+      },
+    },
+  ]
 
   return (
     <div>
@@ -144,7 +228,17 @@ export function AdminCalendar() {
         </div>
       </div>
 
-      <Table columns={columns} data={data} getRowKey={(event) => event.id} emptyMessage="No events match these filters" />
+      {error ? (
+        <div className="flex items-center justify-between rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <Text variant="bodySmall" className="text-danger">Unable to load calendar events from the server.</Text>
+          <Button variant="secondary" onClick={retry}>Retry</Button>
+        </div>
+      ) : loading ? (
+        <Text variant="body">Loading calendar events…</Text>
+      ) : (
+        <Table columns={columns} data={data} getRowKey={(event) => event.id} emptyMessage="No events match these filters" />
+      )}
+      {actionError ? <p role="alert" className="mt-3 text-[13px] text-danger">Unable to complete that action. Derived rent and lease dates are managed from the tenant record.</p> : null}
 
       <div className="mt-4 flex items-center justify-between">
         <Text variant="bodySmall" className="text-slate-500">

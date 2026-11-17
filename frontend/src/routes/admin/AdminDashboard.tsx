@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { Card, StatusBadge, Text } from '../../components'
+import { Button, Card, StatusBadge, Text } from '../../components'
 import { PageHeader } from './components/PageHeader'
 import { getCalendarEvents } from './calendar/data'
-import { getMaintenanceRequests } from './maintenance/data'
 import { getPayments } from './payments/data'
-import { getTenants } from './tenants/data'
-import { getUnits } from './units/data'
-import type { CalendarEvent, Payment, PaymentStatus, Tenant, Unit } from './data/types'
+import { getAdminDashboardSummary } from './dashboardData'
+import type { CalendarEvent, Payment, PaymentStatus } from './data/types'
 
 const paymentStatusLabel: Record<PaymentStatus, string> = {
   paid: 'Paid',
@@ -23,90 +22,75 @@ const paymentStatusVariant: Record<PaymentStatus, 'success' | 'warning' | 'dange
   refunded: 'neutral',
 }
 
-// Summary stats are computed client-side from the existing list endpoints
-// (each fetched with a large pageSize, per §4's small-dataset allowance)
-// rather than a dedicated summary endpoint.
 export function AdminDashboard() {
-  const [units, setUnits] = useState<Unit[]>([])
-  const [tenants, setTenants] = useState<Tenant[]>([])
-  const [openMaintenanceCount, setOpenMaintenanceCount] = useState(0)
-  const [recentPayments, setRecentPayments] = useState<Payment[]>([])
-  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([])
+  const queryClient = useQueryClient()
+  const summaryQuery = useQuery({
+    queryKey: ['admin-dashboard-summary'],
+    queryFn: getAdminDashboardSummary,
+    staleTime: 30_000,
+    retry: false,
+  })
+  const paymentsQuery = useQuery({
+    queryKey: ['admin-dashboard-payments'],
+    queryFn: () => getPayments({ sortBy: 'date', sortDir: 'desc', pageSize: 4 }),
+    staleTime: 30_000,
+    retry: false,
+  })
+  const calendarQuery = useQuery({
+    queryKey: ['admin-dashboard-calendar'],
+    queryFn: () => getCalendarEvents({ dateFrom: new Date().toISOString().slice(0, 10), sortDir: 'asc', pageSize: 4 }),
+    staleTime: 30_000,
+    retry: false,
+  })
+
+  const summary = summaryQuery.data
+  const recentPayments: Payment[] = paymentsQuery.data?.data ?? []
+  const upcomingEvents: CalendarEvent[] = calendarQuery.data?.data ?? []
 
   useEffect(() => {
-    let cancelled = false
-    Promise.all([
-      getUnits({ pageSize: 1000 }),
-      getTenants({ pageSize: 1000 }),
-      getMaintenanceRequests({ status: 'open', pageSize: 1 }),
-      getPayments({ sortBy: 'date', sortDir: 'desc', pageSize: 4 }),
-      getCalendarEvents({ sortDir: 'asc', pageSize: 4 }),
-    ]).then(([unitsResult, tenantsResult, maintenanceResult, paymentsResult, calendarResult]) => {
-      if (cancelled) return
-      setUnits(unitsResult.data)
-      setTenants(tenantsResult.data)
-      setOpenMaintenanceCount(maintenanceResult.total)
-      setRecentPayments(paymentsResult.data)
-      setUpcomingEvents(calendarResult.data)
-    })
-    return () => {
-      cancelled = true
+    for (const payment of paymentsQuery.data?.data ?? []) {
+      queryClient.setQueryData(['admin-payment', payment.id], payment)
     }
-  }, [])
-
-  const totalUnits = units.length
-  const occupiedUnits = units.filter((unit) => unit.status === 'occupied').length
-  const vacantUnits = units.filter((unit) => unit.status === 'vacant').length
-  const overdueTenants = tenants.filter((tenant) => tenant.rentStatus === 'overdue').length
-  const activeTenants = tenants.filter((tenant) => tenant.status === 'active').length
+  }, [queryClient, paymentsQuery.data?.data])
 
   return (
     <div className="page-container">
       <PageHeader title="Dashboard" description="Plaza overview at a glance." />
 
+      {summaryQuery.isError ? (
+        <div role="alert" className="mb-4 flex items-center justify-between rounded-lg border border-danger/20 bg-danger/5 p-4">
+          <Text variant="bodySmall" className="text-danger">Unable to load dashboard figures from the server.</Text>
+          <Button variant="secondary" onClick={() => void summaryQuery.refetch()}>Retry</Button>
+        </div>
+      ) : null}
+
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="stat-card stat-primary">
-          <Text variant="caption" className="text-slate-500">
-            Units
-          </Text>
-          <Text variant="display" className="mt-1 text-slate-900">
-            {totalUnits}
-          </Text>
+          <Text variant="caption" className="text-slate-500">Units</Text>
+          <Text variant="display" className="mt-1 text-slate-900">{summary ? summary.totalUnits : summaryQuery.isLoading ? '…' : '—'}</Text>
           <Text variant="bodySmall" className="mt-1 text-slate-500">
-            {occupiedUnits} occupied · {vacantUnits} vacant
+            {summary ? `${summary.occupiedUnits} occupied · ${summary.vacantUnits} vacant` : ' '}
           </Text>
         </Card>
         <Card className="stat-card stat-info">
-          <Text variant="caption" className="text-slate-500">
-            Active tenants
-          </Text>
-          <Text variant="display" className="mt-1 text-slate-900">
-            {activeTenants}
-          </Text>
+          <Text variant="caption" className="text-slate-500">Active tenants</Text>
+          <Text variant="display" className="mt-1 text-slate-900">{summary ? summary.activeTenants : summaryQuery.isLoading ? '…' : '—'}</Text>
           <Text variant="bodySmall" className="mt-1 text-slate-500">
-            of {tenants.length} total
+            {summary ? `of ${summary.totalTenants} total` : ' '}
           </Text>
         </Card>
         <Card className="stat-card stat-danger">
-          <Text variant="caption" className="text-slate-500">
-            Rent overdue
-          </Text>
-          <Text variant="display" className="mt-1 text-danger">
-            {overdueTenants}
-          </Text>
+          <Text variant="caption" className="text-slate-500">Rent overdue</Text>
+          <Text variant="display" className="mt-1 text-danger">{summary ? summary.overdueTenants : summaryQuery.isLoading ? '…' : '—'}</Text>
           <Text variant="bodySmall" className="mt-1 text-slate-500">
-            tenant{overdueTenants === 1 ? '' : 's'} behind on rent
+            {summary ? `tenant${summary.overdueTenants === 1 ? '' : 's'} behind on rent` : ' '}
           </Text>
         </Card>
         <Card className="stat-card stat-warning">
-          <Text variant="caption" className="text-slate-500">
-            Open maintenance
-          </Text>
-          <Text variant="display" className="mt-1 text-slate-900">
-            {openMaintenanceCount}
-          </Text>
+          <Text variant="caption" className="text-slate-500">Open maintenance</Text>
+          <Text variant="display" className="mt-1 text-slate-900">{summary ? summary.openMaintenance : summaryQuery.isLoading ? '…' : '—'}</Text>
           <Text variant="bodySmall" className="mt-1 text-slate-500">
-            request{openMaintenanceCount === 1 ? '' : 's'} awaiting action
+            {summary ? `request${summary.openMaintenance === 1 ? '' : 's'} awaiting action` : ' '}
           </Text>
         </Card>
       </div>
@@ -116,66 +100,66 @@ export function AdminDashboard() {
           header={
             <>
               <Text variant="h3">Recent payments</Text>
-              <Link to="/admin/payments" className="text-[13px] font-medium text-primary hover:text-primary-light">
-                View all
-              </Link>
+              <Link to="/admin/payments" className="text-[13px] font-medium text-primary hover:text-primary-light">View all</Link>
             </>
           }
         >
-          <div className="flex flex-col gap-1">
-            {recentPayments.map((payment) => (
-              <Link
-                key={payment.id}
-                to={`/admin/payments/${payment.id}`}
-                className="flex items-center justify-between rounded-md px-3 py-2.5 transition-colors hover:bg-slate-50"
-              >
-                <div>
-                  <Text variant="body" className="text-slate-900">
-                    {payment.tenantName}
-                  </Text>
-                  <Text variant="caption" className="text-slate-500">
-                    {payment.unitNumber} · {payment.date}
-                  </Text>
-                </div>
-                <StatusBadge
-                  variant={paymentStatusVariant[payment.status]}
-                  label={paymentStatusLabel[payment.status]}
-                  dot
-                />
-              </Link>
-            ))}
-          </div>
+          {paymentsQuery.isError ? (
+            <div role="alert" className="flex items-center justify-between gap-3">
+              <Text variant="bodySmall" className="text-danger">Unable to load recent payments.</Text>
+              <Button variant="secondary" size="sm" onClick={() => void paymentsQuery.refetch()}>Retry</Button>
+            </div>
+          ) : paymentsQuery.isLoading ? (
+            <Text variant="bodySmall" className="text-slate-500">Loading payments…</Text>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {recentPayments.map((payment) => (
+                <Link
+                  key={payment.id}
+                  to={`/admin/payments/${payment.id}`}
+                  className="flex items-center justify-between rounded-md px-3 py-2.5 transition-colors hover:bg-slate-50"
+                >
+                  <div>
+                    <Text variant="body" className="text-slate-900">{payment.tenantName}</Text>
+                    <Text variant="caption" className="text-slate-500">{payment.unitNumber} · {payment.date}</Text>
+                  </div>
+                  <StatusBadge variant={paymentStatusVariant[payment.status]} label={paymentStatusLabel[payment.status]} dot />
+                </Link>
+              ))}
+              {recentPayments.length === 0 ? <Text variant="bodySmall" className="text-slate-500">No payments found.</Text> : null}
+            </div>
+          )}
         </Card>
 
         <Card
           header={
             <>
               <Text variant="h3">Upcoming calendar</Text>
-              <Link to="/admin/calendar" className="text-[13px] font-medium text-primary hover:text-primary-light">
-                View calendar
-              </Link>
+              <Link to="/admin/calendar" className="text-[13px] font-medium text-primary hover:text-primary-light">View calendar</Link>
             </>
           }
         >
-          <div className="flex flex-col gap-1">
-            {upcomingEvents.map((event) => (
-              <div key={event.id} className="flex items-center justify-between px-3 py-2.5">
-                <div>
-                  <Text variant="body" className="text-slate-900">
-                    {event.title}
-                  </Text>
-                  {event.relatedLabel ? (
-                    <Text variant="caption" className="text-slate-500">
-                      {event.relatedLabel}
-                    </Text>
-                  ) : null}
+          {calendarQuery.isError ? (
+            <div role="alert" className="flex items-center justify-between gap-3">
+              <Text variant="bodySmall" className="text-danger">Unable to load upcoming events.</Text>
+              <Button variant="secondary" size="sm" onClick={() => void calendarQuery.refetch()}>Retry</Button>
+            </div>
+          ) : calendarQuery.isLoading ? (
+            <Text variant="bodySmall" className="text-slate-500">Loading upcoming events…</Text>
+          ) : (
+            <div className="flex flex-col gap-1">
+              {upcomingEvents.map((event) => (
+                <div key={event.id} className="flex items-center justify-between px-3 py-2.5">
+                  <div>
+                    <Text variant="body" className="text-slate-900">{event.title}</Text>
+                    {event.relatedLabel ? <Text variant="caption" className="text-slate-500">{event.relatedLabel}</Text> : null}
+                  </div>
+                  <Text variant="bodySmall" className="text-slate-500">{event.date}</Text>
                 </div>
-                <Text variant="bodySmall" className="text-slate-500">
-                  {event.date}
-                </Text>
-              </div>
-            ))}
-          </div>
+              ))}
+              {upcomingEvents.length === 0 ? <Text variant="bodySmall" className="text-slate-500">No upcoming events.</Text> : null}
+            </div>
+          )}
         </Card>
       </div>
     </div>

@@ -88,7 +88,7 @@ export interface Announcement {
 
 export type ReminderType = 'automatic' | 'manual'
 export type ReminderTarget = 'tenant' | 'group' | 'everyone'
-export type ReminderStatus = 'scheduled' | 'sent' | 'failed'
+export type ReminderStatus = 'scheduled' | 'sent' | 'failed' | 'cancelled'
 
 export interface Reminder {
   id: string
@@ -109,4 +109,5 @@ export interface CalendarEvent {
   type: CalendarEventType
   date: string
   relatedLabel?: string
+  tenantId?: string
 }

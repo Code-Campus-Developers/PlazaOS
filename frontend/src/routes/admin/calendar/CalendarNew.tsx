@@ -1,29 +1,18 @@
 import { useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Input } from '../../../components'
 import { BackLink } from '../components/BackLink'
 import { PageHeader } from '../components/PageHeader'
-import { Select } from '../components/Select'
-import type { CalendarEventType } from '../data/types'
 import { addCalendarEvent } from './data'
-
-const typeOptions: { value: CalendarEventType; label: string }[] = [
-  { value: 'lease_renewal', label: 'Lease renewal' },
-  { value: 'reminder', label: 'Reminder' },
-  { value: 'rent_due', label: 'Rent due' },
-  { value: 'meeting', label: 'Meeting' },
-  { value: 'inspection', label: 'Inspection' },
-  { value: 'eviction', label: 'Eviction' },
-  { value: 'other', label: 'Other' },
-]
 
 // Submits to POST /calendar — see addCalendarEvent() in ./data.ts.
 export function CalendarNew() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [title, setTitle] = useState('')
   const [relatedLabel, setRelatedLabel] = useState('')
-  const [type, setType] = useState<CalendarEventType>('reminder')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -32,10 +21,14 @@ export function CalendarNew() {
     try {
       await addCalendarEvent({
         title,
-        type,
+        type: 'other',
         date,
         relatedLabel: relatedLabel || undefined,
       })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'calendar'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-calendar'] }),
+      ])
       navigate('/admin/calendar')
     } finally {
       setIsSubmitting(false)
@@ -45,7 +38,7 @@ export function CalendarNew() {
   return (
     <div>
       <BackLink to="/admin/calendar" label="Back to calendar" />
-      <PageHeader title="Add event" description="Add a lease renewal, reminder, or other plaza event to the calendar." />
+      <PageHeader title="Add event" description="Add a standalone plaza event. Lease, rent, and reminder dates are managed in their own areas." />
       <Card className="max-w-lg">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.target.value)} required />
@@ -62,7 +55,6 @@ export function CalendarNew() {
             value={relatedLabel}
             onChange={(event) => setRelatedLabel(event.target.value)}
           />
-          <Select label="Type" value={type} onChange={(event) => setType(event.target.value as CalendarEventType)} options={typeOptions} />
           <Button type="submit" disabled={isSubmitting} className="w-full">
             {isSubmitting ? 'Saving…' : 'Add event'}
           </Button>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, Input } from '../../../components'
+import { Button, Card, Input, Text } from '../../../components'
 import { BackLink } from '../components/BackLink'
 import { PageHeader } from '../components/PageHeader'
 import { Select } from '../components/Select'
@@ -19,6 +20,7 @@ const targetOptions: { value: ReminderTarget; label: string }[] = [
 // Submits to POST /reminders — see addReminder() in ./data.ts.
 export function ReminderNew() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [title, setTitle] = useState('')
   const [message, setMessage] = useState('')
@@ -27,18 +29,28 @@ export function ReminderNew() {
   const [groupTenantIds, setGroupTenantIds] = useState<string[]>([])
   const [scheduledFor, setScheduledFor] = useState(() => new Date().toISOString().slice(0, 10))
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [tenantsError, setTenantsError] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    getTenants({ pageSize: 1000 }).then((result) => {
-      if (cancelled) return
-      setTenants(result.data)
-      if (result.data[0]) setTenantId(result.data[0].id)
+    queryClient.fetchQuery({
+      queryKey: ['admin-reference-tenants'],
+      queryFn: async () => (await getTenants({ pageSize: 1000 })).data,
+      staleTime: 30_000,
+      retry: false,
     })
+      .then((result) => {
+        if (cancelled) return
+        setTenants(result)
+        if (result[0]) setTenantId(result[0].id)
+      })
+      .catch((error) => {
+        if (!cancelled) setTenantsError(error instanceof Error ? error.message : 'Unable to load tenants.')
+      })
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [queryClient])
 
   const canSubmit = target !== 'group' || groupTenantIds.length > 0
 
@@ -54,6 +66,11 @@ export function ReminderNew() {
         tenantId: target === 'tenant' ? tenantId : undefined,
         groupTenantIds: target === 'group' ? groupTenantIds : undefined,
       })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'reminders'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-page', 'calendar'] }),
+        queryClient.invalidateQueries({ queryKey: ['admin-dashboard-calendar'] }),
+      ])
       navigate('/admin/reminders')
     } finally {
       setIsSubmitting(false)
@@ -74,6 +91,7 @@ export function ReminderNew() {
             onChange={(event) => setTarget(event.target.value as ReminderTarget)}
             options={targetOptions}
           />
+          {tenantsError ? <Text variant="bodySmall" className="text-danger">{tenantsError}</Text> : null}
           {target === 'tenant' ? (
             <Select
               label="Tenant"

@@ -1,5 +1,4 @@
 import { api } from '../../../lib/api'
-import { mockCalendarEvents } from '../data/mockData'
 import type { CalendarEvent, CalendarEventType } from '../data/types'
 
 export type SortDirection = 'asc' | 'desc'
@@ -21,36 +20,10 @@ export interface GetCalendarEventsResult {
   pageSize: number
 }
 
-// Mirrors GET /calendar's own in-memory filter/sort/paginate logic — used
-// only as a DEV-mode fallback (see getCalendarEvents()) when the backend
-// isn't reachable.
-function mockGetCalendarEvents(params: GetCalendarEventsParams): GetCalendarEventsResult {
-  const { search = '', type = 'all', dateFrom = '', dateTo = '', sortDir = 'asc', page = 1, pageSize = 20 } = params
-
-  let filtered = mockCalendarEvents
-  const query = search.trim().toLowerCase()
-  if (query) filtered = filtered.filter((event) => event.title.toLowerCase().includes(query))
-  if (type !== 'all') filtered = filtered.filter((event) => event.type === type)
-  // CalendarEvent.date is stored as an ISO "YYYY-MM-DD" string, so it
-  // compares lexicographically the same as chronologically.
-  if (dateFrom) filtered = filtered.filter((event) => event.date >= dateFrom)
-  if (dateTo) filtered = filtered.filter((event) => event.date <= dateTo)
-
-  const sorted = [...filtered].sort((a, b) => {
-    const comparison = a.date.localeCompare(b.date)
-    return sortDir === 'asc' ? comparison : -comparison
-  })
-
-  const total = sorted.length
-  const start = (page - 1) * pageSize
-  return { data: sorted.slice(start, start + pageSize), total, page, pageSize }
-}
-
 /**
  * The only function that reads/searches/filters/sorts/paginates the
  * calendar events collection — every other file gets events through this.
- * Calls `GET /calendar?search=&type=&dateFrom=&dateTo=&sortDir=&page=&pageSize=`;
- * falls back to the mock dataset in dev if the backend isn't reachable.
+ * Calls `GET /calendar?search=&type=&dateFrom=&dateTo=&sortDir=&page=&pageSize=`.
  */
 export async function getCalendarEvents(params: GetCalendarEventsParams = {}): Promise<GetCalendarEventsResult> {
   const { search = '', type = 'all', dateFrom = '', dateTo = '', sortDir = 'asc', page = 1, pageSize = 20 } = params
@@ -63,31 +36,23 @@ export async function getCalendarEvents(params: GetCalendarEventsParams = {}): P
   query.set('page', String(page))
   query.set('pageSize', String(pageSize))
 
-  try {
-    return await api.get<GetCalendarEventsResult>(`/calendar?${query.toString()}`)
-  } catch (err) {
-    if (!import.meta.env.DEV) throw err
-    return mockGetCalendarEvents(params)
-  }
+  return api.get<GetCalendarEventsResult>(`/calendar?${query.toString()}`)
 }
 
 export interface AddCalendarEventInput {
   title: string
-  type: CalendarEventType
+  type: 'other'
   date: string
   relatedLabel?: string
 }
 
 /** `POST /calendar`. */
 export async function addCalendarEvent(input: AddCalendarEventInput): Promise<CalendarEvent> {
-  try {
-    const result = await api.post<{ success: boolean; id: string }>('/calendar', input)
-    return { id: result.id, ...input }
-  } catch (err) {
-    if (!import.meta.env.DEV) throw err
-    const newEvent: CalendarEvent = { id: `event-${Date.now()}`, ...input }
-    mockCalendarEvents.push(newEvent)
-    return newEvent
-  }
+  const result = await api.post<{ success: boolean; id: string }>('/calendar', input)
+  return { id: result.id, ...input }
 }
 
+/** `DELETE /calendar/:eventId` — server permits deletion only for standalone events. */
+export async function deleteCalendarEvent(eventId: string): Promise<void> {
+  await api.delete<{ success: boolean }>(`/calendar/${eventId}`)
+}

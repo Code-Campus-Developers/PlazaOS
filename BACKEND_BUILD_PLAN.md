@@ -107,6 +107,7 @@ Every path below is prefixed with the base configured in the frontend's `VITE_AP
 | `POST` | `/tenant/payments` | `{ rentChargeId }` → `{ success, id, checkoutUrl }` — the amount is always read from the trusted `RentCharge` record server-side, never from the request body; triggers the Paystack transaction flow, see [§7](#7-payments--gateway-integration) | ✅ done — real Paystack transaction, settled asynchronously via webhook |
 | `GET` | `/tenant/rent-charges` | `{ data: [{ id, period, amount, dueDate, status }] }` — the tenant's own non-`paid` rent charges, used to pick which one to pay | ✅ done |
 | `GET` | `/tenant/maintenance?page=&pageSize=` | → `{ data: MaintenanceRequest[], total }` | ✅ done |
+| `GET` | `/tenant/maintenance/:id` | → the authenticated tenant's own request details; returns 404 for another tenant's request | ✅ done |
 | `POST` | `/tenant/maintenance` | multipart or JSON payload incl. image(s) — see [§6](#6-file-uploads--receipts) for the recommended format change | ⚠️ done as JSON (data-URL `images[]`); multipart/object-storage is still §6 |
 | `GET` | `/tenant/announcements?page=&pageSize=` | → `{ data: Announcement[], total }` | ✅ done |
 | `GET` | `/tenant/calendar` | → tenant-relevant calendar items, aggregated from stored `CalendarEvent` docs, the tenant's own non-`paid` `RentCharge` due dates, their active `Lease` end date(s), and `Reminder`s that target them — **not** duplicated into `CalendarEvent` (see [§1](#1-data-models-mongodb--mongoose)) | ✅ done |
@@ -127,10 +128,11 @@ All §3.1 routes above are implemented in `backend/src/app/api/**`, backed by Mo
 | `POST` | `/units` | new unit creation (`UnitNew.tsx`) |
 | `GET` | `/units/:unitId` | `getUnit()` |
 | `PATCH` | `/units/:unitId` | `updateUnit()` — `tenantId`/`tenantName` may only be explicitly set to `null` (unassign); new assignment only happens via the atomic `POST /tenants` transaction |
+| `DELETE` | `/units/:unitId` | vacant, unassigned units only; rejected if tenant, lease, rent-charge, payment, or maintenance history references the unit |
 | `GET` | `/tenants?search=&rentStatus=&accountStatus=&sortBy=&sortDir=&page=&pageSize=` | [tenants/data.ts](frontend/src/routes/admin/tenants/data.ts) `getTenants()` — `rentStatus` is derived read-only server-side from `RentCharge` state |
 | `POST` | `/tenants` | `addTenant()` — see [§2](#2-auth--authorization) for server-side temp-password generation. Tenant + unit-assignment + lease creation runs inside one MongoDB transaction (see [§5](#5-validation--data-integrity)). |
 | `GET` | `/tenants/:tenantId` | `getTenant()` |
-| `PATCH` | `/tenants/:tenantId` | `updateTenant()` — accepts `{leaseEnd?, monthlyRent?, accountStatus?, mustChangePassword?}` only; **`rentStatus` is intentionally excluded** (see §13's resolved decision) |
+| `PATCH` | `/tenants/:tenantId` | `updateTenant()` — accepts `{leaseEnd?, monthlyRent?, status?, accountStatus?, mustChangePassword?}`; `status` deactivates/reactivates the account without deleting history; **`rentStatus` is intentionally excluded** (see §13's resolved decision) |
 | `POST` | `/tenants/:tenantId/reset-password` | admin-triggered reset, reuses the same server-side temp-password flow as creation |
 | `GET` | `/payments?search=&status=&method=&sortBy=&sortDir=&page=&pageSize=` | [payments/data.ts](frontend/src/routes/admin/payments/data.ts) `getPayments()` |
 | `POST` | `/payments` | `{ rentChargeId, method, date, note }` — amount/tenant/unit are always derived from the referenced `RentCharge`, never the request body; offline payments only (`method != 'gateway'`); see [§7](#7-payments--gateway-integration) |
@@ -139,13 +141,17 @@ All §3.1 routes above are implemented in `backend/src/app/api/**`, backed by Mo
 | `GET` | `/maintenance?search=&status=&priority=&sortBy=&sortDir=&page=&pageSize=` | [maintenance/data.ts](frontend/src/routes/admin/maintenance/data.ts) `getMaintenanceRequests()` |
 | `GET` | `/maintenance/:requestId` | admin maintenance detail |
 | `PATCH` | `/maintenance/:requestId` | status/priority/notes updates from `MaintenanceDetail.tsx`; auto-sets `resolvedAt` when status becomes `resolved` |
+| `DELETE` | `/maintenance/:requestId` | open requests only; in-progress and resolved requests remain as history |
 | `GET` | `/announcements` | list for `Announcements.tsx` |
 | `POST` | `/announcements` | `{ title, body, audience, audienceTenantIds }` — `author` is the authenticated admin's real name |
+| `DELETE` | `/announcements/:announcementId` | permanently removes a posted announcement |
 | `GET` | `/reminders?search=&status=&type=&sortBy=&sortDir=&page=&pageSize=` | [reminders/data.ts](frontend/src/routes/admin/reminders/data.ts) `getReminders()` |
 | `POST` | `/reminders` | `{ title, message, target, tenantId, groupTenantIds, scheduledFor }` — always creates `type: 'manual'`; picked up by the existing `processReminders()` sweep |
 | `GET` | `/reminders/:reminderId` | admin reminder detail |
+| `PATCH` | `/reminders/:reminderId` | `{ status: 'cancelled' }` for scheduled reminders; cancellation is retained in history, sent/failed reminders cannot be canceled |
 | `GET` | `/calendar?search=&type=&dateFrom=&dateTo=&sortDir=&page=&pageSize=` | [calendar/data.ts](frontend/src/routes/admin/calendar/data.ts) `getCalendarEvents()` — plaza-wide 4-source in-memory aggregation (real `CalendarEvent` + derived RentCharge/Lease/Reminder items) |
-| `POST` | `/calendar` | new calendar event (`CalendarNew.tsx`) |
+| `POST` | `/calendar` | new standalone event (`type: 'other'`); rent, lease, and reminder dates are derived from their source records |
+| `DELETE` | `/calendar/:eventId` | standalone events only; derived rent, lease, and reminder dates cannot be deleted here |
 
 - [x] Build every route in §3.1 first (Phase 1 of the frontend's own contract) — these unblock replacing tenant-side mock fallbacks.
 - [x] Build §3.2 next — every admin `data.ts` function now calls the real backend (with a DEV-only mock-data fallback for offline development), and every admin page component uses async loading states instead of synchronous mock reads. See [AUDIT §3.2](AUDIT.md#32-admin-side-has-zero-backend-integration--entirely-static-in-memory-mock-data).

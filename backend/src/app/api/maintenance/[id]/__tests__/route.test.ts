@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { NextRequest } from 'next/server'
-import { GET, PATCH } from '@/app/api/maintenance/[id]/route'
+import { DELETE, GET, PATCH } from '@/app/api/maintenance/[id]/route'
 import { signToken } from '@/lib/jwt'
 import { MaintenanceRequest } from '@/models/MaintenanceRequest'
 
@@ -59,6 +59,28 @@ describe('PATCH /maintenance/:id', () => {
     vi.mocked(MaintenanceRequest.findById).mockResolvedValue(null as never)
     const response = await PATCH(adminRequest('PATCH', { status: 'resolved' }), { params: Promise.resolve({ id: 'req-1' }) })
     expect(response.status).toBe(404)
+  })
+
+  describe('DELETE /maintenance/:id', () => {
+    beforeEach(() => vi.clearAllMocks())
+
+    it('only deletes open requests', async () => {
+      const deleteOne = vi.fn().mockResolvedValue(undefined)
+      vi.mocked(MaintenanceRequest.findById).mockResolvedValue(baseDoc({ deleteOne }) as never)
+
+      const response = await DELETE(adminRequest('DELETE'), { params: Promise.resolve({ id: 'req-1' }) })
+
+      expect(response.status).toBe(200)
+      expect(deleteOne).toHaveBeenCalledOnce()
+    })
+
+    it('preserves in-progress requests as history', async () => {
+      vi.mocked(MaintenanceRequest.findById).mockResolvedValue(baseDoc({ status: 'in_progress' }) as never)
+
+      const response = await DELETE(adminRequest('DELETE'), { params: Promise.resolve({ id: 'req-1' }) })
+
+      expect(response.status).toBe(409)
+    })
   })
 
   it('rejects an empty update body', async () => {
