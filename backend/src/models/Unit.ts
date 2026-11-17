@@ -6,6 +6,7 @@ const unitSchema = new Schema(
     // Stored as a string (mock floors are "1"/"2"/"3") so it matches the frontend's own convention.
     floor: { type: String, required: true },
     sizeSqft: { type: Number, required: true },
+    // Legacy property name; this value represents yearly rent.
     monthlyRent: { type: Number, required: true },
     status: { type: String, enum: ['occupied', 'vacant', 'maintenance'], required: true, default: 'vacant' },
     tenantId: { type: Schema.Types.ObjectId, ref: 'User' },

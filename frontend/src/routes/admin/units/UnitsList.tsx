@@ -35,7 +35,7 @@ const sortOptions: { value: UnitSortField; label: string }[] = [
   { value: 'unitNumber', label: 'Unit number' },
   { value: 'floor', label: 'Floor' },
   { value: 'sizeSqft', label: 'Size' },
-  { value: 'monthlyRent', label: 'Monthly rent' },
+  { value: 'monthlyRent', label: 'Yearly rent' },
   { value: 'status', label: 'Status' },
 ]
 
@@ -130,7 +130,7 @@ export function UnitsList() {
     },
     { key: 'floor', header: 'Floor' },
     { key: 'sizeSqft', header: 'Size', render: (unit) => `${unit.sizeSqft} sqft` },
-    { key: 'monthlyRent', header: 'Monthly rent', render: (unit) => formatNaira(unit.monthlyRent) },
+    { key: 'monthlyRent', header: 'Yearly rent', render: (unit) => formatNaira(unit.monthlyRent) },
     { key: 'tenantName', header: 'Tenant', render: (unit) => unit.tenantName ?? '—' },
     {
       key: 'status',

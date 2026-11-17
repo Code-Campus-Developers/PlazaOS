@@ -9,11 +9,21 @@ export interface MaintenanceRequest {
   id: string
   title: string
   description?: string
-  priority?: 'low' | 'medium' | 'high'
+  priority?: MaintenancePriority
   category?: string
   status: MaintenanceStatus
   createdAt: string
   images?: string[]
+}
+
+export type MaintenancePriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export interface CreateMaintenanceRequest {
+  title: string
+  description: string
+  priority: MaintenancePriority
+  category?: string
+  images?: File[]
 }
 
 export const maintenanceService = {
@@ -25,7 +35,7 @@ export const maintenanceService = {
     return api.get<MaintenanceRequest>(`/tenant/maintenance/${encodeURIComponent(id)}`)
   },
 
-  async create(payload: { title: string; description?: string; priority?: string; category?: string; images?: File[] }) {
+  async create(payload: CreateMaintenanceRequest) {
     const form = new FormData()
     form.append('title', payload.title)
     if (payload.description !== undefined) form.append('description', payload.description)

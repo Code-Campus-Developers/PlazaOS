@@ -24,8 +24,22 @@ export async function saveMaintenanceImages(files: File[]): Promise<UploadedImag
     const buffer = Buffer.from(await file.arrayBuffer())
     if (!isSupportedImage(buffer)) throw new ApiError(`"${file.name}" isn't a supported image type (jpeg, png, webp)`, 400)
 
-    uploads.push(await uploadMaintenanceImage(buffer))
+    try {
+      uploads.push(await uploadMaintenanceImage(buffer))
+    } catch (error) {
+      console.error('Maintenance image upload failed', error)
+      const status =
+        typeof error === 'object' && error !== null && 'http_code' in error && typeof error.http_code === 'number'
+          ? error.http_code
+          : undefined
+      if (status === 403) {
+        throw new ApiError(
+          'Cloudinary denied the image upload (403). The API credentials authenticate, but the Cloudinary account or upload restrictions are blocking uploads. Check the account status and upload permissions.',
+          502,
+        )
+      }
+      throw new ApiError('Image upload failed. Check Cloudinary configuration and try again.', 502)
+    }
   }
   return uploads
 }
-

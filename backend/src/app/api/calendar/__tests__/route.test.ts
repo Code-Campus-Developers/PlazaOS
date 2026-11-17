@@ -45,7 +45,7 @@ describe('GET /calendar (admin, plaza-wide)', () => {
 
   it('merges standalone events with derived rent-due, lease-renewal, and reminder items', async () => {
     vi.mocked(CalendarEvent.find).mockResolvedValue([{ _id: 'evt-1', title: 'Fire drill', type: 'other', date: '2026-08-10' }] as never)
-    vi.mocked(RentCharge.find).mockResolvedValue([{ _id: 'rc-1', tenantId: 'tenant-1', unitId: 'unit-1', dueDate: '2026-08-05' }] as never)
+    vi.mocked(RentCharge.find).mockResolvedValue([{ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', tenantId: 'tenant-1', unitId: 'unit-1', dueDate: '2026-08-05' }] as never)
     vi.mocked(Lease.find).mockResolvedValue([{ _id: 'lease-1', tenantId: 'tenant-1', unitId: 'unit-1', endDate: '2026-09-01' }] as never)
     vi.mocked(Reminder.find).mockResolvedValue([{ _id: 'rem-1', title: 'Rent reminder', scheduledFor: '2026-08-03', targetLabel: 'Everyone' }] as never)
     vi.mocked(Unit.find).mockResolvedValue([{ _id: 'unit-1', unitNumber: 'A-101' }] as never)
@@ -62,7 +62,7 @@ describe('GET /calendar (admin, plaza-wide)', () => {
 
   it('filters by type', async () => {
     mockEmptySources()
-    vi.mocked(RentCharge.find).mockResolvedValue([{ _id: 'rc-1', tenantId: 'tenant-1', unitId: 'unit-1', dueDate: '2026-08-05' }] as never)
+    vi.mocked(RentCharge.find).mockResolvedValue([{ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', tenantId: 'tenant-1', unitId: 'unit-1', dueDate: '2026-08-05' }] as never)
     vi.mocked(CalendarEvent.find).mockResolvedValue([{ _id: 'evt-1', title: 'Fire drill', type: 'other', date: '2026-08-10' }] as never)
 
     const response = await GET(adminGet('http://localhost/api/calendar?type=rent_due'), undefined as never)

@@ -68,7 +68,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   requireRole(request, 'admin')
   const body = await request.json().catch(() => null)
   const parsed = createUnitSchema.safeParse(body)
-  if (!parsed.success) throw new ApiError('unitNumber, floor, sizeSqft, and monthlyRent are required', 400)
+  if (!parsed.success) throw new ApiError('unitNumber, floor, sizeSqft, and yearly rent are required', 400)
 
   await dbConnect()
   const existing = await Unit.findOne({ unitNumber: parsed.data.unitNumber })

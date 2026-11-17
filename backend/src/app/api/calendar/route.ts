@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { dbConnect } from '@/lib/db'
 import { CalendarEvent } from '@/models/CalendarEvent'
 import { RentCharge } from '@/models/RentCharge'
+import { ANNUAL_RENT_PERIOD_REGEX } from '@/lib/annual-rent-charge'
 import { Lease } from '@/models/Lease'
 import { Reminder } from '@/models/Reminder'
 import { Unit } from '@/models/Unit'
@@ -40,7 +41,7 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
   await dbConnect()
   const [events, charges, leases, reminders, units] = await Promise.all([
     CalendarEvent.find({}),
-    RentCharge.find({ status: { $ne: 'paid' } }),
+    RentCharge.find({ status: { $ne: 'paid' }, period: { $regex: ANNUAL_RENT_PERIOD_REGEX } }),
     Lease.find({ status: 'active' }),
     Reminder.find({ status: 'scheduled' }),
     Unit.find({}),

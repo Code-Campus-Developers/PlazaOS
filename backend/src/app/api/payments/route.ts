@@ -12,6 +12,7 @@ import { CURRENCY } from '@/lib/currency'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
 import { reconcileStalePendingPayment } from '@/lib/reconcile-pending-payment'
 import { ensureActivePaymentIndex } from '@/lib/payment-index-readiness'
+import { isAnnualRentChargePeriod } from '@/lib/annual-rent-charge'
 
 export { corsOptions as OPTIONS }
 
@@ -101,6 +102,9 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   await ensureActivePaymentIndex()
   const rentCharge = await RentCharge.findById(parsed.data.rentChargeId).catch(() => null)
   if (!rentCharge) throw new ApiError('Rent charge not found', 404)
+  if (!isAnnualRentChargePeriod(rentCharge.period)) {
+    throw new ApiError('Only annual rent charges can be paid. Monthly rent charges are no longer accepted.', 400)
+  }
   if (rentCharge.status === 'paid') throw new ApiError('This rent charge has already been paid', 409)
 
   const tenant = await User.findOne({ _id: rentCharge.tenantId, role: 'tenant' })
@@ -166,4 +170,3 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
 
   return NextResponse.json({ success: true, id: payment._id.toString() })
 })
-

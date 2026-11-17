@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { NextRequest } from 'next/server'
 import mongoose from 'mongoose'
 import { POST } from '@/app/api/tenants/route'
@@ -6,6 +6,7 @@ import { signToken } from '@/lib/jwt'
 import { Unit } from '@/models/Unit'
 import { User } from '@/models/User'
 import { Lease } from '@/models/Lease'
+import { RentCharge } from '@/models/RentCharge'
 import { AccountInvitation } from '@/models/AccountInvitation'
 import { sendEmailWithStatus } from '@/lib/email'
 
@@ -13,7 +14,7 @@ vi.mock('@/lib/db', () => ({ dbConnect: vi.fn() }))
 vi.mock('@/models/Unit', () => ({ Unit: { findById: vi.fn() } }))
 vi.mock('@/models/User', () => ({ User: { findOne: vi.fn(), create: vi.fn() } }))
 vi.mock('@/models/Lease', () => ({ Lease: { create: vi.fn(), findOne: vi.fn() } }))
-vi.mock('@/models/RentCharge', () => ({ RentCharge: { find: vi.fn() } }))
+vi.mock('@/models/RentCharge', () => ({ RentCharge: { find: vi.fn(), create: vi.fn() } }))
 vi.mock('@/models/AccountInvitation', () => ({
   AccountInvitation: { updateMany: vi.fn(), create: vi.fn(), updateOne: vi.fn() },
 }))
@@ -41,6 +42,14 @@ const validBody = {
   leaseEnd: '2027-07-31',
   monthlyRent: 1200,
 }
+const leaseDoc = {
+  _id: 'lease-1',
+  startDate: validBody.leaseStart,
+  endDate: validBody.leaseEnd,
+  rentAmount: validBody.monthlyRent,
+  tenantId: 'tenant-1',
+  unitId: 'unit-1',
+}
 
 function mockSessionQuery(resolvedValue: unknown) {
   return vi.fn(() => ({ session: vi.fn().mockResolvedValue(resolvedValue) }))
@@ -61,7 +70,10 @@ describe('POST /tenants', () => {
     vi.mocked(AccountInvitation.create).mockResolvedValue([{ _id: 'invitation-1' }] as never)
     vi.mocked(AccountInvitation.updateOne).mockResolvedValue({} as never)
     vi.mocked(sendEmailWithStatus).mockResolvedValue({ status: 'sent' })
+    vi.mocked(RentCharge.create).mockResolvedValue([{ _id: 'rent-charge-1' }] as never)
+    vi.mocked(Lease.create).mockResolvedValue([leaseDoc] as never)
   })
+  afterEach(() => vi.useRealTimers())
 
   it('rejects assigning a tenant to a unit that is not vacant', async () => {
     Unit.findById = mockSessionQuery({ _id: 'unit-1', status: 'occupied', unitNumber: 'A-101' }) as never
@@ -99,11 +111,12 @@ describe('POST /tenants', () => {
   })
 
   it('creates the tenant, occupies the unit, and creates a lease atomically on success', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-15T12:00:00Z'))
     const unitDoc = { _id: 'unit-1', status: 'vacant', unitNumber: 'A-101', save: vi.fn().mockResolvedValue(undefined) }
     Unit.findById = mockSessionQuery(unitDoc) as never
     User.findOne = mockSessionQuery(null) as never
     vi.mocked(User.create).mockResolvedValue([{ _id: 'tenant-1', name: 'Jane Cooper' }] as never)
-    vi.mocked(Lease.create).mockResolvedValue([{ _id: 'lease-1' }] as never)
 
     const response = await POST(adminRequest(validBody), undefined as never)
     const json = await response.json()
@@ -112,6 +125,18 @@ describe('POST /tenants', () => {
     expect(json.id).toBe('tenant-1')
     expect(unitDoc.status).toBe('occupied')
     expect(unitDoc.save).toHaveBeenCalledOnce()
+    expect(RentCharge.create).toHaveBeenCalledWith(
+      [expect.objectContaining({
+        tenantId: 'tenant-1',
+        unitId: 'unit-1',
+        leaseId: 'lease-1',
+        period: '2026-08-01 to 2027-07-31',
+        amount: 1200,
+        dueDate: '2026-08-01',
+        status: 'overdue',
+      })],
+      { session },
+    )
   })
 
   it('creates the tenant WITHOUT a password and in the pending-setup state', async () => {
@@ -119,7 +144,6 @@ describe('POST /tenants', () => {
     Unit.findById = mockSessionQuery(unitDoc) as never
     User.findOne = mockSessionQuery(null) as never
     vi.mocked(User.create).mockResolvedValue([{ _id: 'tenant-1', name: 'Jane Cooper' }] as never)
-    vi.mocked(Lease.create).mockResolvedValue([{ _id: 'lease-1' }] as never)
 
     await POST(adminRequest(validBody), undefined as never)
 
@@ -134,7 +158,6 @@ describe('POST /tenants', () => {
     Unit.findById = mockSessionQuery(unitDoc) as never
     User.findOne = mockSessionQuery(null) as never
     vi.mocked(User.create).mockResolvedValue([{ _id: 'tenant-1', name: 'Jane Cooper' }] as never)
-    vi.mocked(Lease.create).mockResolvedValue([{ _id: 'lease-1' }] as never)
 
     const response = await POST(adminRequest(validBody), undefined as never)
     const json = await response.json()
@@ -150,7 +173,6 @@ describe('POST /tenants', () => {
     Unit.findById = mockSessionQuery(unitDoc) as never
     User.findOne = mockSessionQuery(null) as never
     vi.mocked(User.create).mockResolvedValue([{ _id: 'tenant-1', name: 'Jane Cooper' }] as never)
-    vi.mocked(Lease.create).mockResolvedValue([{ _id: 'lease-1' }] as never)
 
     await POST(adminRequest(validBody), undefined as never)
 
@@ -165,7 +187,6 @@ describe('POST /tenants', () => {
     Unit.findById = mockSessionQuery(unitDoc) as never
     User.findOne = mockSessionQuery(null) as never
     vi.mocked(User.create).mockResolvedValue([{ _id: 'tenant-1', name: 'Jane Cooper' }] as never)
-    vi.mocked(Lease.create).mockResolvedValue([{ _id: 'lease-1' }] as never)
 
     await POST(adminRequest(validBody), undefined as never)
 
@@ -180,7 +201,6 @@ describe('POST /tenants', () => {
     Unit.findById = mockSessionQuery(unitDoc) as never
     User.findOne = mockSessionQuery(null) as never
     vi.mocked(User.create).mockResolvedValue([{ _id: 'tenant-1', name: 'Jane Cooper' }] as never)
-    vi.mocked(Lease.create).mockResolvedValue([{ _id: 'lease-1' }] as never)
     vi.mocked(sendEmailWithStatus).mockResolvedValue({ status: 'failed', error: 'provider down' })
 
     const response = await POST(adminRequest(validBody), undefined as never)

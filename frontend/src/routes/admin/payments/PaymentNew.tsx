@@ -122,7 +122,7 @@ export function PaymentNew() {
   return (
     <div>
       <BackLink to="/admin/payments" label="Back to payments" />
-      <PageHeader title="Record payment" description="Log an offline payment made by a tenant." />
+      <PageHeader title="Record annual rent payment" description="Record yearly rent already received from the tenant." />
       <Card className="max-w-lg">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <Select
@@ -136,18 +136,19 @@ export function PaymentNew() {
           {chargesError ? <Text variant="bodySmall" className="text-danger">{chargesError}</Text> : null}
           {rentCharges.length > 0 ? (
             <Select
-              label="Rent charge"
+              label="Annual rent year"
+              helperText="Choose the lease year covered by this payment."
               value={rentChargeId}
               onChange={(event) => setRentChargeId(event.target.value)}
               options={rentCharges.map((charge) => ({
                 value: charge.id,
-                label: `${formatNaira(charge.amount)} due ${charge.dueDate} (${charge.status})`,
+                label: `${charge.period} — ${formatNaira(charge.amount)}`,
               }))}
               required
             />
           ) : (
             <Text variant="bodySmall" className="text-slate-500">
-              This tenant has no outstanding rent charges.
+              This tenant has no outstanding annual rent payment.
             </Text>
           )}
           <Select

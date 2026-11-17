@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbConnect } from '@/lib/db'
 import { MaintenanceRequest } from '@/models/MaintenanceRequest'
 import { RentCharge } from '@/models/RentCharge'
+import { ANNUAL_RENT_PERIOD_REGEX } from '@/lib/annual-rent-charge'
 import { Unit } from '@/models/Unit'
 import { User } from '@/models/User'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
@@ -19,7 +20,7 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
       Unit.countDocuments({ status: 'vacant' }),
       User.countDocuments({ role: 'tenant' }),
       User.countDocuments({ role: 'tenant', status: 'active' }),
-      RentCharge.distinct('tenantId', { status: 'overdue' }),
+      RentCharge.distinct('tenantId', { status: 'overdue', period: { $regex: ANNUAL_RENT_PERIOD_REGEX } }),
       MaintenanceRequest.countDocuments({ status: 'open' }),
     ])
 

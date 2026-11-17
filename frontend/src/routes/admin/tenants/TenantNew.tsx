@@ -178,18 +178,18 @@ export function TenantNew() {
             label="Unit"
             value={selectedUnitId}
             onChange={(event) => handleUnitChange(event.target.value)}
-            options={vacantUnits.map((unit) => ({ value: unit.id, label: `${unit.unitNumber} — ${formatNaira(unit.monthlyRent)}/mo` }))}
+            options={vacantUnits.map((unit) => ({ value: unit.id, label: `${unit.unitNumber} — ${formatNaira(unit.monthlyRent)}/year` }))}
           />
           <Input label="Lease start" type="date" value={leaseStart} onChange={(event) => setLeaseStart(event.target.value)} required />
           <Input label="Lease end" type="date" value={leaseEnd} onChange={(event) => setLeaseEnd(event.target.value)} required />
           <Input
-            label="Monthly rent"
+            label="Yearly rent"
             type="number"
             min="0"
             step="0.01"
             value={monthlyRent}
             onChange={(event) => setMonthlyRent(event.target.value)}
-            helperText="Auto-filled from the selected unit — editable."
+            helperText="Yearly amount, auto-filled from the selected unit — editable."
             required
           />
           {submitError ? <Text variant="bodySmall" className="text-danger">{submitError}</Text> : null}

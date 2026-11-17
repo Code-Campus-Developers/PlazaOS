@@ -6,6 +6,7 @@ import { User } from '@/models/User'
 import { Unit } from '@/models/Unit'
 import { Lease } from '@/models/Lease'
 import { RentCharge } from '@/models/RentCharge'
+import { ANNUAL_RENT_PERIOD_REGEX, createAnnualRentChargeForLease } from '@/lib/annual-rent-charge'
 import { ApiError } from '@/lib/api-error'
 import { escapeRegex, parsePageParams } from '@/lib/list-query'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
@@ -19,11 +20,9 @@ import {
 export { corsOptions as OPTIONS }
 
 // The `User` model has no lease/rent fields of its own (see BACKEND_BUILD_PLAN.md
-// §1/§14) — `leaseStart`/`leaseEnd`/`monthlyRent` come from the tenant's most
-// recent active `Lease`, and `rentStatus` is derived from their outstanding
-// `RentCharge`s (never a stored/directly-settable field — see the tenant
-// `[id]` route's PATCH handler for why `rentStatus` is intentionally
-// excluded from that endpoint's body).
+// §1/§14). Lease dates and rent amount (exposed under the legacy `monthlyRent`
+// field) come from the tenant's most recent active `Lease`; `rentStatus` comes
+// from outstanding `RentCharge`s and is never client-settable.
 function deriveRentStatus(charges: { status: string }[]): 'paid' | 'due' | 'overdue' {
   if (charges.some((charge) => charge.status === 'overdue')) return 'overdue'
   if (charges.some((charge) => charge.status === 'due')) return 'due'
@@ -82,7 +81,11 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
 
   const [leases, charges] = await Promise.all([
     Lease.find({ tenantId: { $in: userIds }, status: 'active' }).sort({ startDate: -1 }),
-    RentCharge.find({ tenantId: { $in: userIds }, status: { $in: ['due', 'overdue'] } }),
+    RentCharge.find({
+      tenantId: { $in: userIds },
+      status: { $in: ['due', 'overdue'] },
+      period: { $regex: ANNUAL_RENT_PERIOD_REGEX },
+    }),
   ])
 
   const leaseByTenant = new Map<string, any>()
@@ -159,7 +162,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
   const auth = requireRole(request, 'admin')
   const body = await request.json().catch(() => null)
   const parsed = createTenantSchema.safeParse(body)
-  if (!parsed.success) throw new ApiError('name, email, phone, unitId, leaseStart, leaseEnd, and monthlyRent are required', 400)
+  if (!parsed.success) throw new ApiError('name, email, phone, unitId, leaseStart, leaseEnd, and yearly rent are required', 400)
 
   await dbConnect()
   const email = parsed.data.email.toLowerCase()
@@ -228,6 +231,7 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
         ],
         { session },
       )
+      await createAnnualRentChargeForLease(lease, new Date(), session)
 
       const invitation = await issueAccountInvitation(tenant._id, auth.sub, session)
 

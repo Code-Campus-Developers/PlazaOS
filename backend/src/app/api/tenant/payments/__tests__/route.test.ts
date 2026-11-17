@@ -51,7 +51,7 @@ describe('POST /tenant/payments', () => {
   })
 
   it("always charges the RentCharge's own amount, never a client-supplied value", async () => {
-    const rentCharge = { _id: 'rc-1', tenantId: TENANT_ID, amount: 1200, status: 'due' }
+    const rentCharge = { _id: 'rc-1', period: '2026-08-01 to 2027-07-31', tenantId: TENANT_ID, amount: 1200, status: 'due' }
     vi.mocked(RentCharge.findById).mockResolvedValue(rentCharge as never)
     vi.mocked(Payment.create).mockResolvedValue({ _id: 'payment-1', save: vi.fn().mockResolvedValue(undefined) } as never)
     vi.mocked(initializeTransaction).mockResolvedValue({ reference: 'plazaos_payment-1', authorization_url: 'https://paystack.test/pay' } as never)
@@ -64,7 +64,7 @@ describe('POST /tenant/payments', () => {
   })
 
   it('rejects paying an already-paid RentCharge', async () => {
-    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', tenantId: TENANT_ID, amount: 1200, status: 'paid' } as never)
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', tenantId: TENANT_ID, amount: 1200, status: 'paid' } as never)
 
     const response = await POST(tenantRequest({ rentChargeId: 'rc-1' }), undefined as never)
 
@@ -73,7 +73,7 @@ describe('POST /tenant/payments', () => {
   })
 
   it('refuses to start a second payment while one is already in flight for the same charge', async () => {
-    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', tenantId: TENANT_ID, amount: 1200, status: 'due' } as never)
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', tenantId: TENANT_ID, amount: 1200, status: 'due' } as never)
     vi.mocked(Payment.findOne).mockResolvedValue({ _id: 'payment-0', status: 'pending' } as never)
 
     const response = await POST(tenantRequest({ rentChargeId: 'rc-1' }), undefined as never)
@@ -84,12 +84,28 @@ describe('POST /tenant/payments', () => {
   })
 
   it('records the currency the payment was taken in', async () => {
-    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', tenantId: TENANT_ID, amount: 1200, status: 'due' } as never)
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', tenantId: TENANT_ID, amount: 1200, status: 'due' } as never)
     vi.mocked(Payment.create).mockResolvedValue({ _id: 'payment-1', save: vi.fn().mockResolvedValue(undefined) } as never)
     vi.mocked(initializeTransaction).mockResolvedValue({ reference: 'plazaos_payment-1', authorization_url: 'https://paystack.test/pay' } as never)
 
     await POST(tenantRequest({ rentChargeId: 'rc-1' }), undefined as never)
 
     expect(Payment.create).toHaveBeenCalledWith(expect.objectContaining({ currency: 'NGN' }))
+  })
+
+  it('rejects a legacy monthly charge even when referenced directly', async () => {
+    vi.mocked(RentCharge.findById).mockResolvedValue({
+      _id: 'rc-1',
+      period: '2026-08',
+      tenantId: TENANT_ID,
+      amount: 1200,
+      status: 'due',
+    } as never)
+
+    const response = await POST(tenantRequest({ rentChargeId: 'rc-1' }), undefined as never)
+
+    expect(response.status).toBe(400)
+    expect(Payment.create).not.toHaveBeenCalled()
+    expect(initializeTransaction).not.toHaveBeenCalled()
   })
 })

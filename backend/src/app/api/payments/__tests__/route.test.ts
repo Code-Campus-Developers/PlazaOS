@@ -114,13 +114,13 @@ describe('POST /payments (admin offline payment)', () => {
   })
 
   it('returns 409 when the rent charge is already paid', async () => {
-    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', status: 'paid' } as never)
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', status: 'paid' } as never)
     const response = await POST(adminPost({ rentChargeId: 'rc-1', method: 'cash', date: '2026-08-01' }), undefined as never)
     expect(response.status).toBe(409)
   })
 
   it('creates the payment from the RentCharge amount (never the request body) and marks it paid', async () => {
-    const rentCharge = { _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
+    const rentCharge = { _id: 'rc-1', period: '2026-08-01 to 2027-07-31', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
     vi.mocked(RentCharge.findById).mockResolvedValue(rentCharge as never)
     vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper', unitNumber: 'A-101' } as never)
     vi.mocked(Payment.create).mockResolvedValue([{ _id: 'payment-1' }] as never)
@@ -143,7 +143,7 @@ describe('POST /payments (admin offline payment)', () => {
   })
 
   it('writes the payment and the rent charge in one transaction', async () => {
-    const rentCharge = { _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
+    const rentCharge = { _id: 'rc-1', period: '2026-08-01 to 2027-07-31', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
     vi.mocked(RentCharge.findById).mockResolvedValue(rentCharge as never)
     vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper', unitNumber: 'A-101' } as never)
     vi.mocked(Payment.create).mockResolvedValue([{ _id: 'payment-1' }] as never)
@@ -170,7 +170,7 @@ describe('POST /payments (admin offline payment)', () => {
   })
 
   it('refuses to record a second payment for the same rent charge', async () => {
-    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1' } as never)
+    vi.mocked(RentCharge.findById).mockResolvedValue({ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', status: 'due', amount: 950, tenantId: 'tenant-1' } as never)
     vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper' } as never)
     vi.mocked(Payment.findOne).mockResolvedValue({ _id: 'payment-0' } as never)
 
@@ -185,7 +185,7 @@ describe('POST /payments (admin offline payment)', () => {
 
   it('does not let a refunded payment block a legitimate new payment for the same charge', async () => {
     // A refunded payment's money came back, so the period can be paid again.
-    const rentCharge = { _id: 'rc-1', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
+    const rentCharge = { _id: 'rc-1', period: '2026-08-01 to 2027-07-31', status: 'due', amount: 950, tenantId: 'tenant-1', unitId: 'unit-1', save: vi.fn().mockResolvedValue(undefined) }
     vi.mocked(RentCharge.findById).mockResolvedValue(rentCharge as never)
     vi.mocked(User.findOne).mockResolvedValue({ _id: 'tenant-1', name: 'Jane Cooper', unitNumber: 'A-101' } as never)
     vi.mocked(Payment.create).mockResolvedValue([{ _id: 'payment-2' }] as never)
@@ -201,5 +201,23 @@ describe('POST /payments (admin offline payment)', () => {
       rentChargeId: 'rc-1',
       status: { $in: ['pending', 'paid'] },
     })
+  })
+
+  it('rejects a legacy monthly charge even when referenced directly', async () => {
+    vi.mocked(RentCharge.findById).mockResolvedValue({
+      _id: 'rc-1',
+      period: '2026-08',
+      status: 'due',
+      amount: 950,
+      tenantId: 'tenant-1',
+    } as never)
+
+    const response = await POST(
+      adminPost({ rentChargeId: 'rc-1', method: 'cash', date: '2026-08-01' }),
+      undefined as never,
+    )
+
+    expect(response.status).toBe(400)
+    expect(Payment.create).not.toHaveBeenCalled()
   })
 })

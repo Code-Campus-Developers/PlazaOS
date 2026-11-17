@@ -10,7 +10,7 @@ const rentChargeSchema = new Schema(
     tenantId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     unitId: { type: Schema.Types.ObjectId, ref: 'Unit', required: true },
     leaseId: { type: Schema.Types.ObjectId, ref: 'Lease', required: true },
-    // e.g. "2026-08" — the rent period this charge covers.
+    // Annual lease-year range, e.g. "2026-08-01 to 2027-07-31".
     period: { type: String, required: true },
     amount: { type: Number, required: true, min: 0.01 },
     dueDate: { type: String, required: true },

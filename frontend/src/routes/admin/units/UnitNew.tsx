@@ -68,7 +68,7 @@ export function UnitNew() {
             required
           />
           <Input
-            label="Monthly rent"
+            label="Yearly rent"
             type="number"
             min="0"
             step="0.01"

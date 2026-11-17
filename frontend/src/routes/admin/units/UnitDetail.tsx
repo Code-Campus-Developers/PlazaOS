@@ -153,7 +153,7 @@ export function UnitDetail() {
         <Input label="Floor" value={floor} onChange={(event) => setFloor(event.target.value)} />
         <Input label="Size (sqft)" type="number" min="0" value={sizeSqft} onChange={(event) => setSizeSqft(event.target.value)} />
         <Input
-          label="Monthly rent"
+          label="Yearly rent"
           type="number"
           min="0"
           step="0.01"

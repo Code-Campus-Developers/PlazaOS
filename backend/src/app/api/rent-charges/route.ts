@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dbConnect } from '@/lib/db'
 import { RentCharge } from '@/models/RentCharge'
+import { Lease } from '@/models/Lease'
+import { ANNUAL_RENT_PERIOD_REGEX, ensureAnnualRentChargeForLease } from '@/lib/annual-rent-charge'
 import { ApiError } from '@/lib/api-error'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
 
@@ -19,7 +21,13 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
   if (!tenantId) throw new ApiError('tenantId is required', 400)
 
   await dbConnect()
-  const docs = await RentCharge.find({ tenantId, status: { $ne: 'paid' } }).sort({ dueDate: 1 })
+  const lease = await Lease.findOne({ tenantId, status: 'active' }).sort({ startDate: -1 })
+  if (lease) await ensureAnnualRentChargeForLease(lease)
+  const docs = await RentCharge.find({
+    tenantId,
+    status: { $ne: 'paid' },
+    period: { $regex: ANNUAL_RENT_PERIOD_REGEX },
+  }).sort({ dueDate: 1 })
 
   return NextResponse.json({
     data: docs.map((doc) => ({

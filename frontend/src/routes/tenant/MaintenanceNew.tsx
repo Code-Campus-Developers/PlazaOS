@@ -1,16 +1,19 @@
 import { useForm } from 'react-hook-form'
 import { useMemo, useState } from 'react'
-import { Button, Card, Input, Text, Spinner } from '../../components'
+import { Button, Card, Input, Select, Text, Spinner } from '../../components'
 import { useMaintenance } from '../../hooks/useMaintenance'
 import { useNavigate } from 'react-router-dom'
+import type { MaintenancePriority } from '../../lib/services/maintenanceService'
 
-type FormValues = { title: string; description?: string; priority?: string }
+type FormValues = { title: string; description: string; priority: MaintenancePriority }
 
 const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
 const MAX_IMAGES = 5
 
 export function MaintenanceNew() {
-  const { register, handleSubmit, formState } = useForm<FormValues>()
+  const { register, handleSubmit, formState } = useForm<FormValues>({
+    defaultValues: { priority: 'medium' },
+  })
   const [images, setImages] = useState<File[]>([])
   const [imageError, setImageError] = useState<string | null>(null)
   const { create } = useMaintenance()
@@ -32,7 +35,7 @@ export function MaintenanceNew() {
       setTimeout(() => navigate('/tenant/maintenance'), 700)
     } catch (err) {
       console.error(err)
-      setErrorMessage('Submission failed. Please try again.')
+      setErrorMessage(err instanceof Error ? err.message : 'Submission failed. Please try again.')
     }
   }
 
@@ -72,8 +75,24 @@ export function MaintenanceNew() {
             disabled={isSubmitting}
             error={formState.errors.title?.message}
           />
-          <Input label="Description" {...register('description')} disabled={isSubmitting} />
-          <Input label="Priority" {...register('priority')} disabled={isSubmitting} />
+          <Input
+            label="Description"
+            {...register('description', { required: 'Description is required.' })}
+            disabled={isSubmitting}
+            error={formState.errors.description?.message}
+          />
+          <Select
+            label="Priority"
+            options={[
+              { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+              { value: 'urgent', label: 'Urgent' },
+            ]}
+            {...register('priority', { required: true })}
+            disabled={isSubmitting}
+            className="w-[242px] max-w-full"
+          />
 
           <div>
             <label className="text-[13px] font-medium text-slate-900">Images</label>

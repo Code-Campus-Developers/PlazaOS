@@ -34,14 +34,18 @@ describe('GET /tenant/calendar', () => {
     await GET(tenantRequest('tenant-1'), undefined as never)
 
     expect(CalendarEvent.find).toHaveBeenCalledWith({ $or: [{ tenantId: 'tenant-1' }, { tenantId: null }] })
-    expect(RentCharge.find).toHaveBeenCalledWith({ tenantId: 'tenant-1', status: { $ne: 'paid' } })
+    expect(RentCharge.find).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      status: { $ne: 'paid' },
+      period: { $regex: expect.any(RegExp) },
+    })
     expect(Lease.find).toHaveBeenCalledWith({ tenantId: 'tenant-1', status: 'active' })
     expect(Reminder.find).toHaveBeenCalledWith({ status: 'scheduled', $or: [{ target: 'everyone' }, { targetTenantIds: 'tenant-1' }] })
   })
 
   it('merges and sorts all 4 sources by date', async () => {
     vi.mocked(CalendarEvent.find).mockResolvedValue([{ _id: 'evt-1', title: 'Fire drill', date: '2026-08-15', type: 'other' }] as never)
-    vi.mocked(RentCharge.find).mockResolvedValue([{ _id: 'rc-1', dueDate: '2026-08-05' }] as never)
+    vi.mocked(RentCharge.find).mockResolvedValue([{ _id: 'rc-1', period: '2026-08-01 to 2027-07-31', dueDate: '2026-08-05' }] as never)
     vi.mocked(Lease.find).mockResolvedValue([{ _id: 'lease-1', endDate: '2026-08-20' }] as never)
     vi.mocked(Reminder.find).mockResolvedValue([{ _id: 'rem-1', title: 'Reminder', scheduledFor: '2026-08-01' }] as never)
 

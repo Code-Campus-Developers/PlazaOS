@@ -51,35 +51,38 @@ export function PaymentsNew() {
 
   return (
     <div className="px-4 sm:px-6">
-      <Text variant="h1">Pay Rent</Text>
+      <Text variant="h1">Pay yearly rent</Text>
       <Card className="mt-4">
         {isLoading ? (
           <Text variant="bodySmall">Loading outstanding charges…</Text>
         ) : rentCharges.length === 0 ? (
-          <Text variant="bodySmall">You have no outstanding rent charges.</Text>
+          <Text variant="bodySmall">You have no annual rent payment due right now.</Text>
         ) : (
           <div className="flex flex-col gap-4">
             <Select
-              label="Rent charge"
+              label="Annual rent year"
+              helperText="Choose the lease year you are paying for."
               value={selectedId}
               onChange={(event) => setSelectedId(event.target.value)}
               options={rentCharges.map((charge) => ({
                 value: charge.id,
-                label: `${charge.period} — ${formatNaira(charge.amount)} (due ${charge.dueDate})`,
+                label: `${charge.period} — ${formatNaira(charge.amount)}`,
               }))}
             />
             {selected ? (
               <div className="flex items-center gap-2">
-                <Text variant="bodySmall">Status:</Text>
+                <Text variant="bodySmall">Due {selected.dueDate} · Status:</Text>
                 <StatusBadge variant={statusVariant[selected.status]} label={selected.status} />
               </div>
             ) : null}
             <div className="flex justify-end">
               <Button type="button" onClick={onSubmit} disabled={payMutation.status === 'pending' || !selectedId}>
-                {payMutation.status === 'pending' ? 'Processing…' : 'Pay'}
+                {payMutation.status === 'pending' ? 'Processing…' : `Pay ${formatNaira(selected?.amount ?? 0)}`}
               </Button>
             </div>
-            {payMutation.status === 'error' ? <Text variant="bodySmall" className="text-danger">Payment failed. Please try again.</Text> : null}
+            {payMutation.status === 'error' && payMutation.error instanceof Error ? (
+              <Text variant="bodySmall" className="text-danger">Payment failed: {payMutation.error.message}</Text>
+            ) : null}
             {payMutation.status === 'success' ? <Text variant="bodySmall" className="text-success">Payment successful.</Text> : null}
           </div>
         )}
@@ -87,4 +90,3 @@ export function PaymentsNew() {
     </div>
   )
 }
-

@@ -2,6 +2,7 @@ import { RentCharge } from '@/models/RentCharge'
 import { Reminder } from '@/models/Reminder'
 import { User } from '@/models/User'
 import { formatAmount } from './currency'
+import { ANNUAL_RENT_PERIOD_REGEX } from './annual-rent-charge'
 
 interface CreateRentRemindersResult {
   created: number
@@ -21,6 +22,7 @@ export async function createAutomaticRentReminders(now: Date = new Date()): Prom
 
   const charges = await RentCharge.find({
     status: { $in: ['due', 'overdue'] },
+    period: { $regex: ANNUAL_RENT_PERIOD_REGEX },
     _id: { $nin: alreadyReminded },
   })
 
@@ -51,4 +53,3 @@ export async function createAutomaticRentReminders(now: Date = new Date()): Prom
 
   return { created }
 }
-

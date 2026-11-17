@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dbConnect } from '@/lib/db'
 import { CalendarEvent } from '@/models/CalendarEvent'
 import { RentCharge } from '@/models/RentCharge'
+import { ANNUAL_RENT_PERIOD_REGEX } from '@/lib/annual-rent-charge'
 import { Lease } from '@/models/Lease'
 import { Reminder } from '@/models/Reminder'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
@@ -18,7 +19,11 @@ export const GET = withErrorHandling(async (request: NextRequest) => {
   await dbConnect()
   const [events, rentCharges, leases, reminders] = await Promise.all([
     CalendarEvent.find({ $or: [{ tenantId: auth.sub }, { tenantId: null }] }),
-    RentCharge.find({ tenantId: auth.sub, status: { $ne: 'paid' } }),
+    RentCharge.find({
+      tenantId: auth.sub,
+      status: { $ne: 'paid' },
+      period: { $regex: ANNUAL_RENT_PERIOD_REGEX },
+    }),
     Lease.find({ tenantId: auth.sub, status: 'active' }),
     Reminder.find({ status: 'scheduled', $or: [{ target: 'everyone' }, { targetTenantIds: auth.sub }] }),
   ])

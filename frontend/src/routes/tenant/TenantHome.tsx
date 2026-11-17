@@ -90,7 +90,7 @@ export function TenantHome() {
               </div>
             ) : null}
             <div className="flex items-center justify-between">
-              <Text variant="body">Monthly rent</Text>
+              <Text variant="body">Yearly rent</Text>
               <Text variant="body" className="font-semibold text-slate-900">
                 {profile?.monthlyRent != null ? formatNaira(profile.monthlyRent) : '—'}
               </Text>

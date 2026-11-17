@@ -6,8 +6,9 @@ const leaseSchema = new Schema(
     unitId: { type: Schema.Types.ObjectId, ref: 'Unit', required: true },
     startDate: { type: String, required: true },
     endDate: { type: String, required: true },
+    // Annual amount; legacy APIs may still call this `monthlyRent`.
     rentAmount: { type: Number, required: true, min: 0.01 },
-    // Day of the month rent is due (1-28, to stay valid across every month).
+    // Legacy monthly schedule field; annual charges are due on lease anniversaries.
     rentDueDay: { type: Number, required: true, min: 1, max: 28 },
     status: { type: String, enum: ['active', 'ended'], required: true, default: 'active' },
   },

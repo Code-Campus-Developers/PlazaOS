@@ -4,6 +4,7 @@ import { dbConnect } from '@/lib/db'
 import { User } from '@/models/User'
 import { Lease } from '@/models/Lease'
 import { RentCharge } from '@/models/RentCharge'
+import { ANNUAL_RENT_PERIOD_REGEX } from '@/lib/annual-rent-charge'
 import { ApiError } from '@/lib/api-error'
 import { withErrorHandling, requireRole, OPTIONS as corsOptions } from '@/lib/route-handler'
 
@@ -58,7 +59,11 @@ async function loadTenant(id: string) {
   if (!user) return null
   const [lease, charges] = await Promise.all([
     Lease.findOne({ tenantId: user._id, status: 'active' }).sort({ startDate: -1 }),
-    RentCharge.find({ tenantId: user._id, status: { $in: ['due', 'overdue'] } }),
+    RentCharge.find({
+      tenantId: user._id,
+      status: { $in: ['due', 'overdue'] },
+      period: { $regex: ANNUAL_RENT_PERIOD_REGEX },
+    }),
   ])
   return { user, lease, rentStatus: deriveRentStatus(charges.map((charge) => ({ status: charge.status }))) }
 }

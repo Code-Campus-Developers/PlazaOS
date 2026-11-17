@@ -307,7 +307,7 @@ export function TenantDetail() {
         <DetailField label="Lease start">{currentTenant.leaseStart}</DetailField>
         <Input label="Lease end" type="date" value={leaseEnd} onChange={(event) => setLeaseEnd(event.target.value)} />
         <Input
-          label="Monthly rent"
+          label="Yearly rent"
           type="number"
           min="0"
           step="0.01"

@@ -20,7 +20,7 @@ describe('createAutomaticRentReminders', () => {
   it('creates one automatic Reminder per due/overdue charge that has none yet', async () => {
     vi.mocked(Reminder.distinct).mockResolvedValue([])
     vi.mocked(RentCharge.find).mockResolvedValue([
-      { _id: 'charge-1', tenantId: 'tenant-1', amount: 500, period: '2026-08', dueDate: '2026-08-01', status: 'overdue' },
+      { _id: 'charge-1', tenantId: 'tenant-1', amount: 500, period: '2026-08-01 to 2027-07-31', dueDate: '2026-08-01', status: 'overdue' },
     ] as never)
     vi.mocked(User.findById).mockReturnValue(mockLeanChain({ name: 'Jane Doe' }) as never)
 
@@ -51,7 +51,7 @@ describe('createAutomaticRentReminders', () => {
   it('tolerates a duplicate-key race from a concurrent run without throwing', async () => {
     vi.mocked(Reminder.distinct).mockResolvedValue([])
     vi.mocked(RentCharge.find).mockResolvedValue([
-      { _id: 'charge-1', tenantId: 'tenant-1', amount: 500, period: '2026-08', dueDate: '2026-08-01', status: 'due' },
+      { _id: 'charge-1', tenantId: 'tenant-1', amount: 500, period: '2026-08-01 to 2027-07-31', dueDate: '2026-08-01', status: 'due' },
     ] as never)
     vi.mocked(User.findById).mockReturnValue(mockLeanChain({ name: 'Jane Doe' }) as never)
     vi.mocked(Reminder.create).mockRejectedValue(new Error('E11000 duplicate key error'))
