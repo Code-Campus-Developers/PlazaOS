@@ -140,14 +140,17 @@ describe('POST /tenant/maintenance', () => {
     form.set('description', 'Kitchen sink drips')
     const { ApiError } = await import('@/lib/api-error')
     vi.mocked(saveMaintenanceImages).mockRejectedValue(
-      new ApiError('Cloudinary rejected the image upload (403). Check the configured cloud credentials and upload permissions.', 502),
+      new ApiError(
+        'Cloudinary denied the image upload (403). The API credentials authenticate, but the Cloudinary account or upload restrictions are blocking uploads. Check the account status and upload permissions.',
+        502,
+      ),
     )
 
     const response = await POST(tenantFormPost(form), undefined as never)
     const json = await response.json()
 
     expect(response.status).toBe(502)
-    expect(json.message).toMatch(/Cloudinary rejected the image upload \(403\)/)
+    expect(json.message).toMatch(/Cloudinary denied the image upload \(403\)/)
     expect(MaintenanceRequest.create).not.toHaveBeenCalled()
   })
 })

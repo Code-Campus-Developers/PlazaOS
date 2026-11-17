@@ -79,12 +79,14 @@ describe('GET /rent-charges (admin)', () => {
     await GET(adminRequest('http://localhost/api/rent-charges?tenantId=tenant-1'), undefined as never)
 
     const [filter] = vi.mocked(RentCharge.find).mock.calls[0]
+    const periodFilter = Reflect.get(Reflect.get(filter, 'period') ?? {}, '$regex')
     expect(filter).toMatchObject({
       tenantId: 'tenant-1',
       status: { $ne: 'paid' },
       period: { $regex: expect.any(RegExp) },
     })
-    expect('2026-08'.match((filter as { period: { $regex: RegExp } }).period.$regex)).toBeNull()
+    expect(periodFilter).toBeInstanceOf(RegExp)
+    expect('2026-08'.match(periodFilter)).toBeNull()
   })
 
   it('rejects a tenant-role token with 403', async () => {
